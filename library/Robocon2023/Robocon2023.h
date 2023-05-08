@@ -6,6 +6,10 @@
 #define RIGHTWARD 4
 #define ROTATE_CW 5 
 #define ROTATE_C_CW 6
+#define UPWARD_LEFT 7
+#define UPWARD_RIGHT 8
+#define DOWNWARD_LEFT 9
+#define DOWNWARD_RIGHT 10
 
 #define MOVING 1
 #define STOPPING 0
@@ -20,20 +24,109 @@
 #define MPU9250_IMU_ADDRESS 0x68
 #define INTERVAL_MS_PRINT 1000
 
-struct can_frame {
-    unsigned long   can_id;       // CAN_ID 
-    byte            can_dlc;      // frame data length in byte 
-    byte            data[8]={0};  // CAN_DATA 
+#define SERIAL_PORT Serial
+
+#define WIRE_PORT Wire // Your desired Wire port.      Used when "USE_SPI" is not defined
+// The value of the last bit of the I2C address.
+// On the SparkFun 9DoF IMU breakout the default is 1, and when the ADR jumper is closed the value becomes 0
+#define AD0_VAL 1
+
+#include <EEPROM.h>
+
+// Define a storage struct for the biases. Include a non-zero header and a simple checksum
+struct biasStore
+{
+  int32_t header = 0x42;
+  int32_t biasGyroX = 0;
+  int32_t biasGyroY = 0;
+  int32_t biasGyroZ = 0;
+  int32_t biasAccelX = 0;
+  int32_t biasAccelY = 0;
+  int32_t biasAccelZ = 0;
+  int32_t biasCPassX = 0;
+  int32_t biasCPassY = 0;
+  int32_t biasCPassZ = 0;
+  int32_t sum = 0;
+};
+
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+void updateBiasStoreSum(biasStore *store) // Update the bias store checksum
+{
+  int32_t sum = store->header;
+  sum += store->biasGyroX;
+  sum += store->biasGyroY;
+  sum += store->biasGyroZ;
+  sum += store->biasAccelX;
+  sum += store->biasAccelY;
+  sum += store->biasAccelZ;
+  sum += store->biasCPassX;
+  sum += store->biasCPassY;
+  sum += store->biasCPassZ;
+  store->sum = sum;
 }
-can_output,         //CAN struct to store id,dlc and data for output from MCU to Speed controller
-can_input,          //CAN struct to store id,dlc and data for input  from Speed controller to MCU
-can_motor_msg[4];   //CAN struct to store id,dlc and data for M1 and M2
+
+bool isBiasStoreValid(biasStore *store) // Returns true if the header and checksum are valid
+{
+  int32_t sum = store->header;
+
+  if (sum != 0x42)
+    return false;
+
+  sum += store->biasGyroX;
+  sum += store->biasGyroY;
+  sum += store->biasGyroZ;
+  sum += store->biasAccelX;
+  sum += store->biasAccelY;
+  sum += store->biasAccelZ;
+  sum += store->biasCPassX;
+  sum += store->biasCPassY;
+  sum += store->biasCPassZ;
+
+  return (store->sum == sum);
+}
+
+void printBiases(biasStore *store)
+{
+  SERIAL_PORT.print(F("Gyro X: "));
+  SERIAL_PORT.print(store->biasGyroX);
+  SERIAL_PORT.print(F(" Gyro Y: "));
+  SERIAL_PORT.print(store->biasGyroY);
+  SERIAL_PORT.print(F(" Gyro Z: "));
+  SERIAL_PORT.println(store->biasGyroZ);
+  SERIAL_PORT.print(F("Accel X: "));
+  SERIAL_PORT.print(store->biasAccelX);
+  SERIAL_PORT.print(F(" Accel Y: "));
+  SERIAL_PORT.print(store->biasAccelY);
+  SERIAL_PORT.print(F(" Accel Z: "));
+  SERIAL_PORT.println(store->biasAccelZ);
+  SERIAL_PORT.print(F("CPass X: "));
+  SERIAL_PORT.print(store->biasCPassX);
+  SERIAL_PORT.print(F(" CPass Y: "));
+  SERIAL_PORT.print(store->biasCPassY);
+  SERIAL_PORT.print(F(" CPass Z: "));
+  SERIAL_PORT.println(store->biasCPassZ);
+
+}
+
+
+ICM_20948_I2C myICM; // Otherwise create an ICM_20948_I2C object
+
+
+// struct can_frame {
+    // unsigned long   can_id;       // CAN_ID 
+    // byte            can_dlc;      // frame data length in byte 
+    // byte            data[8]={0};  // CAN_DATA 
+// }
+// can_output,         //CAN struct to store id,dlc and data for output from MCU to Speed controller
+// can_input,          //CAN struct to store id,dlc and data for input  from Speed controller to MCU
+// can_motor_msg[4];   //CAN struct to store id,dlc and data for M1 and M2
 
 int previous_direction,i;
 
-MCP_CAN CAN0(5);     // Set CS pin to pin 5
+// MCP_CAN CAN0(5);     // Set CS pin to pin 5
 
-MPU9250 mpu;
+// MPU9250 mpu;
 
 
 void Robot_Direction(int direction, int motor_direction[4])
@@ -97,7 +190,7 @@ void Robot_Direction(int direction, int motor_direction[4])
 	return ;
 	
 }
-
+/*
 void CAN_receive_msg ( uint16_t feedback_motor[4] )
 {
 	int retry = 0; 
@@ -278,44 +371,798 @@ double calc_optimum_current ( double current, int sample_size, int direction, in
 		return 0;
 	}
 }
-	
-void getInitialYaw(float *initial_yaw)
+*/
+
+void ICM20948_SETUP()
 {
-	float yaw_difference,yaw_now,yaw_prev;
-	unsigned long currentMillis = 0, lastPrintMillis = 0;
-	i = 0;
-	while ( initial_yaw == 0)
+	  WIRE_PORT.begin();
+  WIRE_PORT.setClock(400000);
+
+
+
+  //myICM.enableDebugging(); // Uncomment this line to enable helpful debug messages on Serial
+
+  bool initialized = false;
+  while (!initialized)
   {
-    currentMillis = millis();
-    if (mpu.update()&& currentMillis - lastPrintMillis > INTERVAL_MS_PRINT ) {
-      yaw_now = mpu.getYaw();
+    myICM.begin(WIRE_PORT, AD0_VAL);
+
+
+    if (myICM.status != ICM_20948_Stat_Ok)
+    {
+
+      SERIAL_PORT.println(F("Trying again..."));
+      delay(500);
+    }
+    else
+    {
+      initialized = true;
+    }
+  }
+
+
+  SERIAL_PORT.println(F("Device connected!"));
+
+  bool success = true; // Use success to show if the DMP configuration was successful
+
+  // Initialize the DMP. initializeDMP is a weak function. You can overwrite it if you want to e.g. to change the sample rate
+  success &= (myICM.initializeDMP() == ICM_20948_Stat_Ok);
+
+  // DMP sensor options are defined in ICM_20948_DMP.h
+  //    INV_ICM20948_SENSOR_ACCELEROMETER               (16-bit accel)
+  //    INV_ICM20948_SENSOR_GYROSCOPE                   (16-bit gyro + 32-bit calibrated gyro)
+  //    INV_ICM20948_SENSOR_RAW_ACCELEROMETER           (16-bit accel)
+  //    INV_ICM20948_SENSOR_RAW_GYROSCOPE               (16-bit gyro + 32-bit calibrated gyro)
+  //    INV_ICM20948_SENSOR_MAGNETIC_FIELD_UNCALIBRATED (16-bit compass)
+  //    INV_ICM20948_SENSOR_GYROSCOPE_UNCALIBRATED      (16-bit gyro)
+  //    INV_ICM20948_SENSOR_STEP_DETECTOR               (Pedometer Step Detector)
+  //    INV_ICM20948_SENSOR_STEP_COUNTER                (Pedometer Step Detector)
+  //    INV_ICM20948_SENSOR_GAME_ROTATION_VECTOR        (32-bit 6-axis quaternion)
+  //    INV_ICM20948_SENSOR_ROTATION_VECTOR             (32-bit 9-axis quaternion + heading accuracy)
+  //    INV_ICM20948_SENSOR_GEOMAGNETIC_ROTATION_VECTOR (32-bit Geomag RV + heading accuracy)
+  //    INV_ICM20948_SENSOR_GEOMAGNETIC_FIELD           (32-bit calibrated compass)
+  //    INV_ICM20948_SENSOR_GRAVITY                     (32-bit 6-axis quaternion)
+  //    INV_ICM20948_SENSOR_LINEAR_ACCELERATION         (16-bit accel + 32-bit 6-axis quaternion)
+  //    INV_ICM20948_SENSOR_ORIENTATION                 (32-bit 9-axis quaternion + heading accuracy)
+
+  // Enable the DMP orientation sensor
+  success &= (myICM.enableDMPSensor(INV_ICM20948_SENSOR_ORIENTATION) == ICM_20948_Stat_Ok);
+
+  // Enable any additional sensors / features
+  //success &= (myICM.enableDMPSensor(INV_ICM20948_SENSOR_RAW_GYROSCOPE) == ICM_20948_Stat_Ok);
+  //success &= (myICM.enableDMPSensor(INV_ICM20948_SENSOR_RAW_ACCELEROMETER) == ICM_20948_Stat_Ok);
+  //success &= (myICM.enableDMPSensor(INV_ICM20948_SENSOR_MAGNETIC_FIELD_UNCALIBRATED) == ICM_20948_Stat_Ok);
+
+  // Configuring DMP to output data at multiple ODRs:
+  // DMP is capable of outputting multiple sensor data at different rates to FIFO.
+  // Setting value can be calculated as follows:
+  // Value = (DMP running rate / ODR ) - 1
+  // E.g. For a 5Hz ODR rate when DMP is running at 55Hz, value = (55/5) - 1 = 10.
+  success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Quat9, 0) == ICM_20948_Stat_Ok); // Set to the maximum
+  //success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Accel, 0) == ICM_20948_Stat_Ok); // Set to the maximum
+  //success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Gyro, 0) == ICM_20948_Stat_Ok); // Set to the maximum
+  //success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Gyro_Calibr, 0) == ICM_20948_Stat_Ok); // Set to the maximum
+  //success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Cpass, 0) == ICM_20948_Stat_Ok); // Set to the maximum
+  //success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Cpass_Calibr, 0) == ICM_20948_Stat_Ok); // Set to the maximum
+
+  // Enable the FIFO
+  success &= (myICM.enableFIFO() == ICM_20948_Stat_Ok);
+
+  // Enable the DMP
+  success &= (myICM.enableDMP() == ICM_20948_Stat_Ok);
+
+  // Reset DMP
+  success &= (myICM.resetDMP() == ICM_20948_Stat_Ok);
+
+  // Reset FIFO
+  success &= (myICM.resetFIFO() == ICM_20948_Stat_Ok);
+
+  // Check success
+  if (success)
+  {
+#ifndef QUAT_ANIMATION
+    SERIAL_PORT.println(F("DMP enabled!"));
+#endif
+  }
+  else
+  {
+    SERIAL_PORT.println(F("Enable DMP failed!"));
+    SERIAL_PORT.println(F("Please check that you have uncommented line 29 (#define ICM_20948_USE_DMP) in ICM_20948_C.h..."));
+    while (1)
+      ; // Do nothing more
+  }
+  
+  if (!EEPROM.begin(128)) // Allocate 128 Bytes for EEPROM storage. ESP32 needs this.
+  {
+    SERIAL_PORT.println(F("EEPROM.begin failed! You will not be able to save the biases..."));
+  }
+
+  biasStore store;
+
+  EEPROM.get(0, store); // Read existing EEPROM, starting at address 0
+  if (isBiasStoreValid(&store))
+  {
+    SERIAL_PORT.println(F("Bias data in EEPROM is valid. Restoring it..."));
+    success &= (myICM.setBiasGyroX(store.biasGyroX) == ICM_20948_Stat_Ok);
+    success &= (myICM.setBiasGyroY(store.biasGyroY) == ICM_20948_Stat_Ok);
+    success &= (myICM.setBiasGyroZ(store.biasGyroZ) == ICM_20948_Stat_Ok);
+    success &= (myICM.setBiasAccelX(store.biasAccelX) == ICM_20948_Stat_Ok);
+    success &= (myICM.setBiasAccelY(store.biasAccelY) == ICM_20948_Stat_Ok);
+    success &= (myICM.setBiasAccelZ(store.biasAccelZ) == ICM_20948_Stat_Ok);
+    success &= (myICM.setBiasCPassX(store.biasCPassX) == ICM_20948_Stat_Ok);
+    success &= (myICM.setBiasCPassY(store.biasCPassY) == ICM_20948_Stat_Ok);
+    success &= (myICM.setBiasCPassZ(store.biasCPassZ) == ICM_20948_Stat_Ok);
+
+    if (success)
+    {
+      SERIAL_PORT.println(F("Biases restored."));
+      printBiases(&store);
+    }
+    else
+      SERIAL_PORT.println(F("Bias restore failed!"));
+  }
+
+
+
+  return;
+}
+
+void ICM20948_GET_READING(double *yaw)
+{
+	double roll,pitch;
+
+	// Read any DMP data waiting in the FIFO
+  // Note:
+  //    readDMPdataFromFIFO will return ICM_20948_Stat_FIFONoDataAvail if no data is available.
+  //    If data is available, readDMPdataFromFIFO will attempt to read _one_ frame of DMP data.
+  //    readDMPdataFromFIFO will return ICM_20948_Stat_FIFOIncompleteData if a frame was present but was incomplete
+  //    readDMPdataFromFIFO will return ICM_20948_Stat_Ok if a valid frame was read.
+  //    readDMPdataFromFIFO will return ICM_20948_Stat_FIFOMoreDataAvail if a valid frame was read _and_ the FIFO contains more (unread) data.
+  icm_20948_DMP_data_t data;
+  myICM.readDMPdataFromFIFO(&data);
+  
+
+  
+
+
+  if ((myICM.status == ICM_20948_Stat_Ok) || (myICM.status == ICM_20948_Stat_FIFOMoreDataAvail)) // Was valid data available?
+  {
+    while(myICM.status == ICM_20948_Stat_FIFOMoreDataAvail)
+    {
+      myICM.readDMPdataFromFIFO(&data);
+    }
+    //SERIAL_PORT.print(F("Received data! Header: 0x")); // Print the header in HEX so we can see what data is arriving in the FIFO
+    //if ( data.header < 0x1000) SERIAL_PORT.print( "0" ); // Pad the zeros
+    //if ( data.header < 0x100) SERIAL_PORT.print( "0" );
+    //if ( data.header < 0x10) SERIAL_PORT.print( "0" );
+    //SERIAL_PORT.println( data.header, HEX );
+
+    if ((data.header & DMP_header_bitmap_Quat9) > 0) // We have asked for orientation data so we should receive Quat9
+    {
+      // Q0 value is computed from this equation: Q0^2 + Q1^2 + Q2^2 + Q3^2 = 1.
+      // In case of drift, the sum will not add to 1, therefore, quaternion data need to be corrected with right bias values.
+      // The quaternion data is scaled by 2^30.
+
+      //SERIAL_PORT.printf("Quat9 data is: Q1:%ld Q2:%ld Q3:%ld Accuracy:%d\r\n", data.Quat9.Data.Q1, data.Quat9.Data.Q2, data.Quat9.Data.Q3, data.Quat9.Data.Accuracy);
+
+      // Scale to +/- 1
+      double q1 = ((double)data.Quat9.Data.Q1) / 1073741824.0; // Convert to double. Divide by 2^30
+      double q2 = ((double)data.Quat9.Data.Q2) / 1073741824.0; // Convert to double. Divide by 2^30
+      double q3 = ((double)data.Quat9.Data.Q3) / 1073741824.0; // Convert to double. Divide by 2^30
+      double q0 = sqrt(1.0 - ((q1 * q1) + (q2 * q2) + (q3 * q3)));
+
+      double q2sqr = q2 * q2;
+
+      // roll (x-axis rotation)
+      double t0 = +2.0 * (q0 * q1 + q2 * q3);
+      double t1 = +1.0 - 2.0 * (q1 * q1 + q2sqr);
+      roll = atan2(t0, t1) * 180.0 / PI;
+
+      // pitch (y-axis rotation)
+      double t2 = +2.0 * (q0 * q2 - q3 * q1);
+      t2 = t2 > 1.0 ? 1.0 : t2;
+      t2 = t2 < -1.0 ? -1.0 : t2;
+      pitch = asin(t2) * 180.0 / PI;
+
+      // yaw (z-axis rotation)
+      double t3 = +2.0 * (q0 * q3 + q1 * q2);
+      double t4 = +1.0 - 2.0 * (q2sqr + q3 * q3);
+      *yaw = atan2(t3, t4) * 180.0 / PI;
+	  
+      // SERIAL_PORT.print(F("Roll:"));
+      // SERIAL_PORT.print(roll, 1);
+      // SERIAL_PORT.print(F(" Pitch:"));
+      // SERIAL_PORT.print(pitch, 1);
+      // SERIAL_PORT.print(F(" Yaw:"));
+      // SERIAL_PORT.println(yaw, 1);
+    }
+  }
+
+  
+  if (myICM.status != ICM_20948_Stat_FIFOMoreDataAvail) // If more data is available then we should read it right away - and not delay
+  {
+    delay(10);
+  }
+  
+  return ;
+}	
+
+// void getInitialYaw(float *initial_yaw)
+ void getInitialYaw(double *initial_yaw)
+{
+	double yaw_difference,yaw_now,yaw_prev;
+	unsigned long currentMillis = 0, lastPrintMillis = 0;
+	Serial.println("getting initial yaw");
+	while ( *initial_yaw == 0)
+	{
+      ICM20948_GET_READING(&yaw_now);
       yaw_difference = yaw_now - yaw_prev;
       yaw_prev = yaw_now;
       Serial.print("Yaw_difference\t");
       Serial.println(yaw_difference);
       Serial.println("here ok");
-      if((fabs(yaw_difference)<0.5) && i>5) 
+      if(fabs(yaw_difference)<0.01)
       {
-        Serial.println("yaw<1");
-        *initial_yaw = mpu.getYaw();
-      }
-
-      lastPrintMillis = currentMillis;
-      i++;
-    }
-  }
+        Serial.println("yaw<0.01");
+        // *initial_yaw = mpu.getYaw();
+		 *initial_yaw = yaw_now;
+      }    
+	}
 }
 	
-void Setpoint_Adjust_Yaw (float yaw, int motor_num, int motor_direction, double setpoint_m[4] , int optimum_speed_m, const int speed_chg_per_yaw ) 
+void Setpoint_Adjust_Yaw (double yaw, int motor_num, int motor_direction, int setpoint_m[4], const int speed_chg_per_yaw ) 
 {
-	if(motor_direction == CLOCKWISE)
-      {
-        setpoint_m[motor_num] = optimum_speed_m + yaw * speed_chg_per_yaw ;
-	  }
-	  else
-	  {
-		 setpoint_m[motor_num] = optimum_speed_m - yaw * speed_chg_per_yaw ;
-	  }
-	  return;
+		if(motor_direction == CLOCKWISE)
+		{
+			setpoint_m[motor_num] = setpoint_m[motor_num] + (yaw * speed_chg_per_yaw)/3;
+		}
+		else if(motor_direction == COUNTER_CLOCKWISE)
+		{
+			setpoint_m[motor_num] = setpoint_m[motor_num] - (yaw * speed_chg_per_yaw)/3 ;
+		}
+	return;
 }	  
        
+void Analog_Stick_Calc ( float x, float y, float *magnitude, float *angle )
+{
+	const float pi = 3.141592653589793238;
+	// Serial.print("x now:");
+	// Serial.println(x);
+	// Serial.print("y now:");
+	// Serial.println(y);
+	if(fabs(x)<5) x = 0;
+	if(fabs(y)<5) y = 0;
+
+	*magnitude = std::sqrt(x*x + y*y); // calculate the magnitude using the Pythagorean theorem
+    *angle = std::atan2(y, x) * 180 / pi; // calculate the angle using the arctangent function, and convert from radians to degrees
+	Serial.print("Angle now:");
+    Serial.println(*angle);
+	return;
+}
+
+// void calc_robot_dir ( int *robot_dir_now, float *magnitude , float *angle, int motor_direction[4], double setpoint_m[4] , const int optimum_speed_m[4])
+// {
+	// float ratio_speed_m[4];
+	// float ratio;
+	
+	// Serial.print("magnitude now:");
+	// Serial.println(*magnitude);
+	// Serial.print("angle now:");
+	// Serial.println(*angle);
+	
+	// float magnitude_ratio = 1;
+	//// float magnitude_ratio = *magnitude / 127 ;
+	//// if(magnitude_ratio>1) magnitude_ratio = 1;
+	
+	// Serial.print("magnitude_ratio now:");
+	// Serial.println(magnitude_ratio);
+	
+	// for(int k = 0; k<4;k++)
+	// {
+		// ratio_speed_m[k] = optimum_speed_m[k] * magnitude_ratio;
+
+	// }
+
+// if(*magnitude <30 )
+// {
+	// *robot_dir_now = STOP;
+		// return;
+// }
+	
+	//// if(ratio_speed_m[0] < 10)
+	//// {
+		//// *robot_dir_now = STOP;
+		//// return;
+	//// }
+	
+	// if(*angle>0 && *angle <=90)
+	// {
+		// *robot_dir_now = UPWARD_RIGHT;
+		// ratio = *angle / 90;
+		// setpoint_m[0] = -(ratio * ratio_speed_m[0] + (1-ratio) * ratio_speed_m[0]);
+		// setpoint_m[1] = ratio * ratio_speed_m[0] - (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[2] = - setpoint_m[0];
+		// setpoint_m[3] = - setpoint_m[1];
+	// }
+	// else if(*angle>90 && *angle <=180)
+	// {
+		// *robot_dir_now = UPWARD_LEFT;
+		// ratio = (*angle-90) / 90;
+		// setpoint_m[0] = (ratio * ratio_speed_m[0]) - (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[1] =   ratio * ratio_speed_m[0] + (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[2] = - setpoint_m[0];
+		// setpoint_m[3] = - setpoint_m[1];
+	// }
+	// else if(*angle>-180 && *angle <=-90)
+	// {
+		// *robot_dir_now = DOWNWARD_LEFT;
+		// ratio = (*angle+180) / 90;
+		// setpoint_m[0] = ratio * ratio_speed_m[0] + (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[1] = -(ratio * ratio_speed_m[0]) + (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[2] = - setpoint_m[0];
+		// setpoint_m[3] = - setpoint_m[1];
+	// }
+	// else if(*angle>-90 && *angle <=0)
+	// {
+		// *robot_dir_now = DOWNWARD_RIGHT;
+		// ratio = -(*angle) / 90;
+		// setpoint_m[0] = ratio * ratio_speed_m[0] - (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[1] = -(ratio * ratio_speed_m[0] + (1-ratio) * ratio_speed_m[0]);
+		// setpoint_m[2] = - setpoint_m[0];
+		// setpoint_m[3] = - setpoint_m[1];
+	// }
+	
+	// for(int k = 0; k < 4;k++)
+	// {
+		// if(setpoint_m[k]<0)
+		// {
+			// motor_direction[k] = COUNTER_CLOCKWISE;
+			// setpoint_m[k] = - setpoint_m[k];
+		// }
+		// else
+		// {
+			// motor_direction[k] = CLOCKWISE;
+		// }
+	// }
+	
+	// for(int k = 0; k < 4;k++)
+	// {
+		// Serial.print("Setpoint ");
+		// Serial.print("Motor ");
+		// Serial.print(k);
+		// Serial.print(" :");
+		// Serial.println(setpoint_m[k]);
+		// Serial.print("Motor Direction of M");
+		// Serial.print(k);
+		// Serial.print(" :");
+		// if(motor_direction[k] == COUNTER_CLOCKWISE)
+		// {
+			// Serial.println(" COUNTER_CLOCKWISE");
+		// }
+		// else
+		// {
+			// Serial.println(" CCLOCKWISE");
+		// }
+	// }
+	
+	// return;
+// }
+
+// void calc_robot_dir ( int *robot_dir_now, float *magnitude , float *angle, int motor_direction[4], double setpoint_m[4] , const int optimum_speed_m[4])
+// {
+	// float ratio_speed_m[4];
+	// float ratio;
+	
+	// Serial.print("magnitude now:");
+	// Serial.println(*magnitude);
+	// Serial.print("angle now:");
+	// Serial.println(*angle);
+	
+	// float magnitude_ratio = 1;
+	//// float magnitude_ratio = *magnitude / 127 ;
+	//// if(magnitude_ratio>1) magnitude_ratio = 1;
+	
+	// Serial.print("magnitude_ratio now:");
+	// Serial.println(magnitude_ratio);
+	
+	// for(int k = 0; k<4;k++)
+	// {
+		// ratio_speed_m[k] = optimum_speed_m[k] * magnitude_ratio;
+
+	// }
+
+// if(*magnitude <30 )
+// {
+	// *robot_dir_now = STOP;
+		// return;
+// }
+	
+	//// if(ratio_speed_m[0] < 10)
+	//// {
+		//// *robot_dir_now = STOP;
+		//// return;
+	//// }
+	// if(*angle>0 && *angle <=30)
+	// {
+		// *robot_dir_now = RIGHTWARD;
+		// ratio = *angle / 90;
+		// setpoint_m[0] = -(ratio * ratio_speed_m[0] + (1-ratio) * ratio_speed_m[0]);
+		// setpoint_m[1] = ratio * ratio_speed_m[0] - (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[2] = - setpoint_m[0];
+		// setpoint_m[3] = - setpoint_m[1];
+		
+	// }
+	
+	// else if(*angle>30 && *angle <=60)
+	// {
+		// *robot_dir_now = UPWARD_RIGHT;
+		// ratio = *angle / 90;
+		// setpoint_m[0] = -(ratio * ratio_speed_m[0] + (1-ratio) * ratio_speed_m[0]);
+		// setpoint_m[1] = 0;
+		// setpoint_m[2] = - setpoint_m[0];
+		// setpoint_m[3] = 0;
+	// }
+	
+	// else if(*angle>60 && *angle <=90)
+	// {
+		// *robot_dir_now = FORWARD;
+		// ratio = *angle / 90;
+		// setpoint_m[0] = -(ratio * ratio_speed_m[0] + (1-ratio) * ratio_speed_m[0]);
+		// setpoint_m[1] = ratio * ratio_speed_m[0] - (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[2] = - setpoint_m[0];
+		// setpoint_m[3] = - setpoint_m[1];
+	// }
+	
+	// else if(*angle>90 && *angle <=120)
+	// {
+		// *robot_dir_now = FORWARD;
+		// ratio = (*angle-90) / 90;
+		// setpoint_m[0] = (ratio * ratio_speed_m[0]) - (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[1] =   ratio * ratio_speed_m[0] + (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[2] = - setpoint_m[0];
+		// setpoint_m[3] = - setpoint_m[1];
+	// }
+	
+	// else if(*angle>120 && *angle <=150)
+	// {
+		// *robot_dir_now = UPWARD_LEFT;
+		// ratio = (*angle-90) / 90;
+		// setpoint_m[0] = 0;
+		// setpoint_m[1] =   ratio * ratio_speed_m[0] + (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[2] = 0;
+		// setpoint_m[3] = - setpoint_m[1];
+	// }
+	
+	// else if(*angle>150 && *angle <=180)
+	// {
+		// *robot_dir_now = LEFTWARD;
+		// ratio = (*angle-90) / 90;
+		// setpoint_m[0] = (ratio * ratio_speed_m[0]) - (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[1] =   ratio * ratio_speed_m[0] + (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[2] = - setpoint_m[0];
+		// setpoint_m[3] = - setpoint_m[1];
+	// }
+	
+	// else if(*angle>-180 && *angle <=-150)
+	// {
+		// *robot_dir_now = LEFTWARD;
+		// ratio = (*angle+180) / 90;
+		// setpoint_m[0] = ratio * ratio_speed_m[0] + (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[1] = -(ratio * ratio_speed_m[0]) + (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[2] = - setpoint_m[0];
+		// setpoint_m[3] = - setpoint_m[1];
+	// }
+	
+	// else if(*angle>-150 && *angle <=-120)
+	// {
+		// *robot_dir_now = DOWNWARD_LEFT;
+		// ratio = (*angle+180) / 90;
+		// setpoint_m[0] = ratio * ratio_speed_m[0] + (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[1] = 0;
+		// setpoint_m[2] = - setpoint_m[0];
+		// setpoint_m[3] = 0;
+	// }
+	
+	// else if(*angle>-120 && *angle <=-90)
+	// {
+		// *robot_dir_now = BACKWARD;
+		// ratio = (*angle+180) / 90;
+		// setpoint_m[0] = ratio * ratio_speed_m[0] + (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[1] = -(ratio * ratio_speed_m[0]) + (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[2] = - setpoint_m[0];
+		// setpoint_m[3] = - setpoint_m[1];
+	// }
+	
+	// else if(*angle>-90 && *angle <=-60)
+	// {
+		// *robot_dir_now = BACKWARD;
+		// ratio = -(*angle) / 90;
+		// setpoint_m[0] = ratio * ratio_speed_m[0] - (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[1] = -(ratio * ratio_speed_m[0] + (1-ratio) * ratio_speed_m[0]);
+		// setpoint_m[2] = - setpoint_m[0];
+		// setpoint_m[3] = - setpoint_m[1];
+	// }
+	
+	// else if(*angle>-60 && *angle <=-30)
+	// {
+		// *robot_dir_now = DOWNWARD_RIGHT;
+		// ratio = -(*angle) / 90;
+		// setpoint_m[0] = 0;
+		// setpoint_m[1] = -(ratio * ratio_speed_m[0] + (1-ratio) * ratio_speed_m[0]);
+		// setpoint_m[2] = 0;
+		// setpoint_m[3] = - setpoint_m[1];
+	// }
+	
+	// else if(*angle>-30 && *angle <=0)
+	// {
+		// *robot_dir_now = RIGHTWARD;
+		// ratio = -(*angle) / 90;
+		// setpoint_m[0] = ratio * ratio_speed_m[0] - (1-ratio) * ratio_speed_m[0];
+		// setpoint_m[1] = -(ratio * ratio_speed_m[0] + (1-ratio) * ratio_speed_m[0]);
+		// setpoint_m[2] = - setpoint_m[0];
+		// setpoint_m[3] = - setpoint_m[1];
+	// }
+	
+	// for(int k = 0; k < 4;k++)
+	// {
+		// if(setpoint_m[k]<0)
+		// {
+			// motor_direction[k] = COUNTER_CLOCKWISE;
+			// setpoint_m[k] = - setpoint_m[k];
+		// }
+		// else
+		// {
+			// motor_direction[k] = CLOCKWISE;
+		// }
+	// }
+	
+	// for(int k = 0; k < 4;k++)
+	// {
+		// Serial.print("Setpoint ");
+		// Serial.print("Motor ");
+		// Serial.print(k);
+		// Serial.print(" :");
+		// Serial.println(setpoint_m[k]);
+		// Serial.print("Motor Direction of M");
+		// Serial.print(k);
+		// Serial.print(" :");
+		// if(motor_direction[k] == COUNTER_CLOCKWISE)
+		// {
+			// Serial.println(" COUNTER_CLOCKWISE");
+		// }
+		// else
+		// {
+			// Serial.println(" CCLOCKWISE");
+		// }
+	// }
+	
+	// return;
+// }
+
+void Encoder_Calc ( float distance_x, float distance_y, float *magnitude, float *angle )
+{
+	const float pi = 3.141592653589793238;
+	Serial.print("distance_x now:");
+	Serial.println(distance_x);
+	Serial.print("distance_y now:");
+	Serial.println(distance_y);
+
+	*magnitude = std::sqrt(distance_x*distance_x + distance_y*distance_y); // calculate the magnitude using the Pythagorean theorem
+    *angle = std::atan2(distance_y, distance_x) * 180 / pi; // calculate the angle using the arctangent function, and convert from radians to degrees
+	return;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+void calc_robot_dir ( float *magnitude , float *angle, int setpoint_m[4] , const int optimum_speed_m[4],int motor_direction[4])
+{
+	float ratio_speed_m[4];
+	float ratio;
+	
+	// Serial.print("magnitude now:");
+	// Serial.println(*magnitude);
+	// Serial.print("angle now:");
+	// Serial.println(*angle);
+	
+	// float magnitude_ratio = 1;
+	// float magnitude_ratio = *magnitude / 127 ;
+	// if(magnitude_ratio>1) magnitude_ratio = 1;
+	
+	// Serial.print("magnitude_ratio now:");
+	// Serial.println(magnitude_ratio);
+	
+	// for(int k = 0; k<4;k++)
+	// {
+		// ratio_speed_m[k] = optimum_speed_m[k] * magnitude_ratio;
+
+	// }
+
+if(*magnitude <30 )
+{
+	// *robot_dir_now = STOP;
+		return;
+}
+	
+	// if(ratio_speed_m[0] < 10)
+	// {
+		// *robot_dir_now = STOP;
+		// return;
+	// }
+	if(*angle>0 && *angle <=30)
+	{
+		// *robot_dir_now = RIGHTWARD;
+		ratio = *angle / 90;
+		setpoint_m[0] = optimum_speed_m[0]+12;
+		setpoint_m[1] = optimum_speed_m[1]+12;
+		setpoint_m[2] = optimum_speed_m[2]-15;
+		setpoint_m[3] = optimum_speed_m[3]-15;
+		
+	}
+	
+	else if(*angle>30 && *angle <=60)
+	{
+		// *robot_dir_now = UPWARD_RIGHT;
+		ratio = *angle / 90;
+		setpoint_m[0] = optimum_speed_m[0]+12;
+		setpoint_m[1] = optimum_speed_m[1];
+		setpoint_m[2] = optimum_speed_m[2]-15;
+		setpoint_m[3] = optimum_speed_m[3];
+	}
+	
+	else if(*angle>60 && *angle <=90)
+	{
+		// *robot_dir_now = FORWARD;
+		ratio = *angle / 90;
+		setpoint_m[0] = optimum_speed_m[0]+12;
+		setpoint_m[1] = optimum_speed_m[1]-15;
+		setpoint_m[2] = optimum_speed_m[2]-15;
+		setpoint_m[3] = optimum_speed_m[3]+12;
+	}
+	
+	else if(*angle>90 && *angle <=120)
+	{
+		// *robot_dir_now = FORWARD;
+		ratio = (*angle-90) / 90;
+		setpoint_m[0] = optimum_speed_m[0]+12;
+		setpoint_m[1] = optimum_speed_m[1]-15;
+		setpoint_m[2] = optimum_speed_m[2]-15;
+		setpoint_m[3] = optimum_speed_m[3]+12;
+	}
+	
+	else if(*angle>120 && *angle <=150)
+	{
+		// *robot_dir_now = UPWARD_LEFT;
+		setpoint_m[0] = optimum_speed_m[0];
+		setpoint_m[1] = optimum_speed_m[1]-15;
+		setpoint_m[2] = optimum_speed_m[2];
+		setpoint_m[3] = optimum_speed_m[3]+12;
+	}
+	
+	else if(*angle>150 && *angle <=180)
+	{
+		// *robot_dir_now = LEFTWARD;
+		ratio = (*angle-90) / 90;
+		setpoint_m[0] = optimum_speed_m[0]-15;
+		setpoint_m[1] = optimum_speed_m[1]-15;
+		setpoint_m[2] = optimum_speed_m[2]+12;
+		setpoint_m[3] = optimum_speed_m[3]+12;
+	}
+	
+	else if(*angle>-180 && *angle <=-150)
+	{
+		// *robot_dir_now = LEFTWARD;
+		ratio = (*angle+180) / 90;
+		setpoint_m[0] = optimum_speed_m[0]-15;
+		setpoint_m[1] = optimum_speed_m[1]-15;
+		setpoint_m[2] = optimum_speed_m[2]+12;
+		setpoint_m[3] = optimum_speed_m[3]+12;
+	}
+	
+	else if(*angle>-150 && *angle <=-120)
+	{
+		// *robot_dir_now = DOWNWARD_LEFT;
+		ratio = (*angle+180) / 90;
+		setpoint_m[0] = optimum_speed_m[0]-15;
+		setpoint_m[1] = optimum_speed_m[1];
+		setpoint_m[2] = optimum_speed_m[2]+12;
+		setpoint_m[3] = optimum_speed_m[3];
+	}
+	
+	else if(*angle>-120 && *angle <=-90)
+	{
+		// *robot_dir_now = BACKWARD;
+		ratio = (*angle+180) / 90;
+		setpoint_m[0] = optimum_speed_m[0]-15;
+		setpoint_m[1] = optimum_speed_m[1]+12;
+		setpoint_m[2] = optimum_speed_m[2]+12;
+		setpoint_m[3] = optimum_speed_m[3]-15;
+	}
+	
+	else if(*angle>-90 && *angle <=-60)
+	{
+		// *robot_dir_now = BACKWARD;
+		ratio = -(*angle) / 90;
+		setpoint_m[0] = optimum_speed_m[0]-15;
+		setpoint_m[1] = optimum_speed_m[1]+12;
+		setpoint_m[2] = optimum_speed_m[2]+12;
+		setpoint_m[3] = optimum_speed_m[3]-15;
+	}
+	
+	else if(*angle>-60 && *angle <=-30)
+	{
+		// *robot_dir_now = DOWNWARD_RIGHT;
+		ratio = -(*angle) / 90;
+		setpoint_m[0] = optimum_speed_m[0];
+		setpoint_m[1] = optimum_speed_m[1]+12;
+		setpoint_m[2] = optimum_speed_m[2];
+		setpoint_m[3] = optimum_speed_m[3]-15;
+	}
+	
+	else if(*angle>-30 && *angle <=0)
+	{
+		// *robot_dir_now = RIGHTWARD;
+		ratio = -(*angle) / 90;
+		setpoint_m[0] = optimum_speed_m[0]+12;
+		setpoint_m[1] = optimum_speed_m[1]+12;
+		setpoint_m[2] = optimum_speed_m[2]-15;
+		setpoint_m[3] = optimum_speed_m[3]-15;
+	}
+	
+	for(int k = 0; k < 4;k++)
+	{
+		if(setpoint_m[k]==0 || setpoint_m[k]==-0)
+		{
+			motor_direction[k] = HALT;
+		}
+			
+		else if(setpoint_m[k]<0)
+		{
+			motor_direction[k] = COUNTER_CLOCKWISE;
+		}
+		else
+		{
+			motor_direction[k] = CLOCKWISE;
+		}
+	}
+	
+	// for(int k = 0; k < 4;k++)
+	// {
+		// Serial.print("Setpoint ");
+		// Serial.print("Motor ");
+		// Serial.print(k);
+		// Serial.print(" :");
+		// Serial.println(setpoint_m[k]);
+		// Serial.print("Motor Direction of M");
+		// Serial.print(k);
+		// Serial.print(" :");
+		// if(motor_direction[k] == COUNTER_CLOCKWISE)
+		// {
+			// Serial.println(" COUNTER_CLOCKWISE");
+		// }
+		// else
+		// {
+			// Serial.println(" CCLOCKWISE");
+		// }
+	// }
+	
+	return;
+}
+
+// void Rotate ( int angle )
+// {
+	// setpoint_m[0] = optimum_speed_m[0]+12;
+	// Difference Yaw = Yaw - initial_yaw
+	// angle - difference Yaw 
+	// if(>0)
+	// {
+		// setpoint_m[0] = optimum_speed_m[0]+round((angle - difference Yaw));
