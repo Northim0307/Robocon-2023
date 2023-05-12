@@ -272,30 +272,30 @@ void loop()
     if (ps5.Triangle())   //push servo
     {
       push_servo_angle = 35;
-      push_servo_pwm = map(push_servo_angle,0,180,1639,8192);
+      push_servo_pwm = map(push_servo_angle,0,180,204,1024);
       ledcWrite(push_servo_pwm_channel,push_servo_pwm);
       delay(500);
       push_servo_angle = 155;
-      push_servo_pwm = map(push_servo_angle,0,180,1639,8192);
+      push_servo_pwm = map(push_servo_angle,0,180,204,1024);
       ledcWrite(push_servo_pwm_channel,push_servo_pwm);
     }
     
     if (ps5.R1())
     {
       grip_servo1_angle = 5;
-      grip_servo1_pwm = map(grip_servo1_angle,0,180,1639,8192);
+      grip_servo1_pwm = map(grip_servo1_angle,0,270,204,1024);
       ledcWrite(grip_servo1_pwm_channel,grip_servo1_pwm);
       grip_servo2_angle = 136;
-      grip_servo2_pwm = map(grip_servo2_angle,0,180,1639,8192);
+      grip_servo2_pwm = map(grip_servo2_angle,0,270,204,1024);
       ledcWrite(grip_servo2_pwm_channel,grip_servo2_pwm);
     }
     if (ps5.R2())
       {
         grip_servo1_angle = 32;
-        grip_servo1_pwm = map(grip_servo1_angle,0,180,1639,8192);
+        grip_servo1_pwm = map(grip_servo1_angle,0,270,204,1024);
         ledcWrite(grip_servo1_pwm_channel,grip_servo1_pwm);
         grip_servo2_angle = 98;
-        grip_servo2_pwm = map(grip_servo2_angle,0,180,1639,8192);
+        grip_servo2_pwm = map(grip_servo2_angle,0,270,204,1024);
         ledcWrite(grip_servo2_pwm_channel,grip_servo2_pwm);
 
       }
