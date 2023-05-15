@@ -7,50 +7,53 @@
 #include <EEPROM.h>
 #include <ICM_20948.h>
 #include <Robocon2023.h>
+#include <ESP32Servo.h>
+#include <VescUart.h>
+
+#define SERVO_1_PIN  12
+#define SERVO_2_PIN  14
+#define SERVO_3_PIN  2
+#define LIMIT_SW_PIN 4
+
+#define L_ACTUATOR_PWM_PIN 27
+#define L_ACTUATOR_DIR_PIN 26
+
+#define P_WINDOW_PWM_PIN 33
+#define P_WINDOW_DIR_PIN 25
 
 #define MOTOR1_PIN 5
 #define MOTOR2_PIN 18
 #define MOTOR3_PIN 19
 #define MOTOR4_PIN 23
 
-#define MOTOR1_STARTING 190
-#define MOTOR2_STARTING 186
-#define MOTOR3_STARTING 185
-#define MOTOR4_STARTING 191
+#define MOTOR1_STARTING 184
+#define MOTOR2_STARTING 188
+#define MOTOR3_STARTING 190
+#define MOTOR4_STARTING 184
 
-
-
-//test on table
-//#define MAX_CURRENT_M1 1000 //max 16384      
-//#define MIN_CURRENT_M1 0
-//#define MAX_CURRENT_M2 1000 //max 16384
-//#define MIN_CURRENT_M2 0
-//#define MAX_CURRENT_M3 1000 //max 16384
-//#define MIN_CURRENT_M3 0
-//#define MAX_CURRENT_M4 1000 //max 16384
-//#define MIN_CURRENT_M4 0
-
-//test on floor
-// #define MAX_CURRENT_M1 4000 //max 16384      //1000 if test on table
-// #define MIN_CURRENT_M1 0
-// #define MAX_CURRENT_M2 4000 //max 16384
-// #define MIN_CURRENT_M2 0
-// #define MAX_CURRENT_M3 4000 //max 16384
-// #define MIN_CURRENT_M3 0
-// #define MAX_CURRENT_M4 4000 //max 16384
-// #define MIN_CURRENT_M4 0
-
-
-//test on table
-//#define DEFAULT_STARTING_CURRENT 1000          //1000 if test on table
-
-//test on floor
-// #define DEFAULT_STARTING_CURRENT 3000          //1000 if test on table
-
-//MPU9250
-// #define MAGNETIC_DECLINATION -0.78 // To be defined by user
 
 #define SPEED_CHG_PER_YAW 1
+
+#define DEFAULT_FLIPSKY_RPM 10500
+#define FLIPSKY_HIGHEST_RPM 24500
+#define FLIPSKY_LOWEST_RPM 3500
+
+
+VescUart vesc1;
+
+int motor1_pwm_channel     = 3;
+int motor2_pwm_channel     = 4;
+int motor3_pwm_channel     = 5;
+int motor4_pwm_channel     = 6;
+int l_actuator_pwm_channel = 7;
+int p_window_pwm_channel   = 10;
+
+int frequency_actuator     = 500;
+int resolution_actuator = 8;
+
+int frequency_dji = 500;
+int resolution_dji = 8; //max is 255
+// int resolution_dji = 16; //max is 65535
 
 // const int OPTIMUM_SPEED_M[]= {1000,1000,1000,1000};         //200 if test on table
 
@@ -58,6 +61,7 @@ double Initial_Yaw=0;
 double Old_Yaw, Yaw =0, Yaw_difference =0;
 unsigned long current_millis;
 
+bool Grip_Close=true;
 
 ////test on table
 //const double OPTIMUM_CLOCKWISE_CURRENT_M[]= {200,200,200,200};         //200 if test on table
@@ -104,46 +108,75 @@ uint16_t feedback_M[4];
 // PID PID_M3(&Input_M[2], &Output_M[2], &Setpoint_M[2], Kp_M3, Ki_M3, Kd_M3,0, DIRECT);
 // PID PID_M4(&Input_M[3], &Output_M[3], &Setpoint_M[3], Kp_M4, Ki_M4, Kd_M4,0, DIRECT);
 
-float Magnitude, Angle;
 
-int motor1_pwm_channel = 0;
-int motor2_pwm_channel = 1;
-int motor3_pwm_channel = 2;
-int motor4_pwm_channel = 3;
+float Magnitude_L, Angle_L;
+float Magnitude_R, Angle_R;
 
 
-int frequency = 500;
-int resolution = 8; //max is 255
-// int resolution = 16; //max is 65535
 
 int pulse_M[4];
 int default_M[4]= {MOTOR1_STARTING,MOTOR2_STARTING,MOTOR3_STARTING,MOTOR4_STARTING};
-float Rotate_angle;
+float Rotate_angle=0;
 
 char input;
 
 int speed_count = 0;
 
+float rpm = 0;
+
+
+  
+  //using myservo will automatically search for avaiable pwm channel start from channel 0
+  Servo myservo1;
+  Servo myservo2;
+  Servo myservo3;
+
+
 void setup()
 {
+  ledcSetup(motor1_pwm_channel,frequency_dji,resolution_dji);                //channel 0
+  ledcSetup(motor2_pwm_channel,frequency_dji,resolution_dji);                //channel 1
+  ledcSetup(motor3_pwm_channel,frequency_dji,resolution_dji);                //channel 2
+  ledcSetup(motor4_pwm_channel,frequency_dji,resolution_dji);                //channel 3
+  ledcSetup(l_actuator_pwm_channel,frequency_actuator,resolution_actuator);  //channel 4
+  ledcSetup(p_window_pwm_channel,frequency_actuator,resolution_actuator);    //channel 5
   Serial.begin(115200);
+  Serial2.begin(115200); //serial1
 
-  pinMode(2,OUTPUT);
-  digitalWrite(2,HIGH);
+  vesc1.setSerialPort(&Serial2); //&serial
+
+  pinMode(LIMIT_SW_PIN, INPUT);
+  pinMode(L_ACTUATOR_DIR_PIN,OUTPUT);
+  pinMode(P_WINDOW_DIR_PIN,OUTPUT);
+  
+
+  myservo1.attach(SERVO_1_PIN); // attach the servo signal pin to GPIO 12
+  myservo2.attach(SERVO_2_PIN); // attach the servo signal pin to GPIO 14
+  myservo3.attach(SERVO_3_PIN); // attach the servo signal pin to GPIO 4
+
+  ledcAttachPin(MOTOR1_PIN,motor1_pwm_channel);
+  ledcAttachPin(MOTOR2_PIN,motor2_pwm_channel);
+  ledcAttachPin(MOTOR3_PIN,motor3_pwm_channel);
+  ledcAttachPin(MOTOR4_PIN,motor4_pwm_channel);
+  ledcAttachPin(L_ACTUATOR_PWM_PIN,l_actuator_pwm_channel);
+  ledcAttachPin(P_WINDOW_PWM_PIN,p_window_pwm_channel);
+  
+  attachInterrupt(digitalPinToInterrupt(LIMIT_SW_PIN),Stop_P_Window,RISING);
+
   ps5.begin("00:BE:3B:F7:2D:51");
   //ps5.begin("D8:9E:61:A0:93:74"); //replace with your MAC address
   Serial.println("Ready.");
 
-  ICM20948_SETUP();
+  ICM20948_SETUP_QUAT6();
 
-    while(Initial_Yaw==0)
+  while(Initial_Yaw==0)
   {
     current_millis = millis();
-    while(millis()-current_millis<1000)
+    while(millis()-current_millis<1500)
     {
-      ICM20948_GET_READING(&Yaw);
+      ICM20948_GET_READING_QUAT6(&Yaw);
     }
-    ICM20948_GET_READING(&Yaw);
+    ICM20948_GET_READING_QUAT6(&Yaw);
     if(fabs(Old_Yaw-Yaw)<0.05)
     {
       Initial_Yaw=Yaw;
@@ -156,15 +189,9 @@ void setup()
   Serial.print("Initial Yaw: ");
   Serial.println(Initial_Yaw);
 
-  ledcSetup(motor1_pwm_channel,frequency,resolution);
-  ledcSetup(motor2_pwm_channel,frequency,resolution);
-  ledcSetup(motor3_pwm_channel,frequency,resolution);
-  ledcSetup(motor4_pwm_channel,frequency,resolution);
+  
 
-  ledcAttachPin(MOTOR1_PIN,motor1_pwm_channel);
-  ledcAttachPin(MOTOR2_PIN,motor2_pwm_channel);
-  ledcAttachPin(MOTOR3_PIN,motor3_pwm_channel);
-  ledcAttachPin(MOTOR4_PIN,motor4_pwm_channel);
+  
 
   pulse_M[0]=default_M[0];
   pulse_M[1]=default_M[1];
@@ -181,80 +208,235 @@ void setup()
 
 }
 
+void Stop_P_Window()
+{
+  if(digitalRead(LIMIT_SW_PIN))
+  {
+    ledcWrite(p_window_pwm_channel,0);
+  }
+  return;
+
+}
 
 void loop()
 {
   while (ps5.isConnected() == true) 
   {
- 
-    if (ps5.Cross())
-    {
-      for(i = 0; i < 4; i++)
-      {
-        pulse_M[i]=default_M[i];
-      }
-    }
-    else if(ps5.Circle())
-    {
-      Rotate_angle = 90; 
-    }
-    else
-    {
-      Analog_Stick_Calc(float(ps5.LStickX()),float(ps5.LStickY()), &Magnitude , &Angle );
-      calc_robot_dir ( &Magnitude , &Angle, pulse_M , default_M,Motor_dir);
-    }
-	
-     ICM20948_GET_READING(&Yaw);
+		vesc1.setRPM(rpm);			  
+        ICM20948_GET_READING_QUAT6(&Yaw);
         Serial.print("Yaw_reading:\t");
         Serial.print(Yaw);
         Serial.print("\xC2\xB0"); //Print degree symbol
         Serial.println();
-        Yaw_difference =Yaw - Initial_Yaw;
+        Yaw_difference = Initial_Yaw - Yaw ;
         if(Yaw_difference>=180)
         {
-          Yaw_difference = -(360 - Yaw_difference);
+          Yaw_difference = Yaw_difference- 360;    // if positive then is towards clockwise, if negative then is towards anticlockwise
         }
         else if (Yaw_difference<-180)
         {
-          Yaw_difference = 360 + Yaw_difference;
+          Yaw_difference = Yaw_difference + 360;
         }
         Serial.print("Yaw:\t");
         Serial.print(Yaw_difference);
         Serial.print("\xC2\xB0"); //Print degree symbol
         Serial.println();
+
+    if (ps5.PSButton())
+    {
+      ICM20948_GET_READING_QUAT6(&Yaw);
+      Initial_Yaw = Yaw;
+      Serial.print("Initial Yaw: ");
+      Serial.println(Initial_Yaw);
+
+    }
+
+    if (ps5.Square())
+    {
+      rpm = DEFAULT_FLIPSKY_RPM;
+      vesc1.setRPM(rpm);
+    } 
+
+    if (ps5.Triangle())   //push servo
+    {
+      myservo3.write(35);
+      delay(500);
+      myservo3.write(155);
+    }
+    
+    if (ps5.R1())
+    {
+        myservo1.write(5); // rotate the servo to 180 degrees to close
+        myservo2.write(136); // rotate the servo to 180 degrees to close
+    }
+    if (ps5.R2())
+      {
+        myservo1.write(32); // rotate the servo to 0 degrees to open
+        myservo2.write(98);
+      }
+    
+
+    if (ps5.L1())
+    {
+      digitalWrite(P_WINDOW_DIR_PIN,HIGH);
+      ledcWrite(p_window_pwm_channel,80);
+    }
+    else if(ps5.L2())
+    {
+      digitalWrite(P_WINDOW_DIR_PIN,LOW);
+      ledcWrite(p_window_pwm_channel,80);
+    }
+    else
+    {
+      ledcWrite(p_window_pwm_channel,0);
+    }
+
+    if(ps5.Up())
+    {
+      digitalWrite(L_ACTUATOR_DIR_PIN,HIGH);
+      ledcWrite(l_actuator_pwm_channel,80);
+    }
+    else if(ps5.Down())
+    {
+      digitalWrite(L_ACTUATOR_DIR_PIN,LOW);
+      ledcWrite(l_actuator_pwm_channel,80);
+    }
+    else
+    {
+      ledcWrite(l_actuator_pwm_channel,0);
+    }
+ 
+
+    if (ps5.Cross())
+    {
+      rpm = 0;
+      vesc1.setRPM(rpm);
+
+      for(i = 0; i < 4; i++)
+      {
+        pulse_M[i]=default_M[i];
+        ledcWrite(i+3,pulse_M[i]);
+      }
+      ledcWrite(l_actuator_pwm_channel,0);
+      ledcWrite(p_window_pwm_channel,0);
+      
+    }
+
+    if(ps5.Circle())
+    {
+      Rotate_angle = 90; //because if rotate clockwise is negative angle 
+    }
+    // else
+    // {
+      Analog_Stick_Calc(float(ps5.LStickX()),float(ps5.LStickY()), &Magnitude_L , &Angle_L );
+      Analog_Stick_Calc(float(ps5.RStickX()),float(ps5.RStickY()), &Magnitude_R , &Angle_R );
+      calc_robot_dir ( &Magnitude_L , &Angle_L, pulse_M , default_M,Motor_dir);
+    // }
+
+    if(Magnitude_R>40)
+    {
+      if((Angle_R>-30 && Angle_R <=0)||(Angle_R>0 && Angle_R <=30))
+      {
+        for(i = 0;i<4;i++)
+        {
+        pulse_M[i] = default_M[i]+7;
+        ledcWrite(i+3,pulse_M[i]);
+        }
+      }
+      if((Angle_R>150 && Angle_R <=180)||(Angle_R>-180 && Angle_R <=-150))
+      {
+        for(i = 0;i<4;i++)
+        {
+        pulse_M[i] = default_M[i]-7;
+        ledcWrite(i+3,pulse_M[i]);
+        }
+      }
+      if((Angle_R>60 && Angle_R <=120))
+      {
+        rpm = rpm + 700;
+        if(rpm>FLIPSKY_HIGHEST_RPM)
+        {
+          rpm=FLIPSKY_HIGHEST_RPM;
+
+        }
+        Serial.print("rpm_now: ");
+        Serial.println(rpm);
+
+      }
+      if((Angle_R<-60 && Angle_R >=-120))
+      {
+        rpm = rpm - 700;
+        if(rpm<FLIPSKY_LOWEST_RPM)
+        {
+          rpm=FLIPSKY_LOWEST_RPM;
+        }
+        Serial.print("rpm_now: ");
+        Serial.println(rpm);
+
+      }
+    }
+	
+
       
 
-    if(Rotate_angle!=0 )
+    while(Rotate_angle!=0 )
     {
-      while(fabs(Rotate_angle - Yaw_difference)>1)
+      if (ps5.Cross())
       {
-        ICM20948_GET_READING(&Yaw);
-        Yaw_difference =Yaw - Initial_Yaw;
-        if(Rotate_angle + Yaw_difference>0)
+        Rotate_angle=0;
+        for(i = 0; i<4 ; i++)
+        {
+          pulse_M[i] = default_M[i];
+          ledcWrite(i+3,pulse_M[i]);
+        }
+        break;
+      }
+      ICM20948_GET_READING_QUAT6(&Yaw);
+        Yaw_difference = Initial_Yaw - Yaw ;
+        if(Yaw_difference>=180)
+        {
+          Yaw_difference = Yaw_difference- 360;    // if positive then is towards clockwise, if negative then is towards anticlockwise
+        }
+        else if (Yaw_difference<-180)
+        {
+          Yaw_difference = Yaw_difference + 360;
+        }
+      if(fabs(Rotate_angle - Yaw_difference)>1)
+      {
+        if(Rotate_angle - Yaw_difference>0)
         {
           for(i = 0; i<4 ; i++)
-      {
-        pulse_M[i] = default_M[i]+10;
-      }
-
+          {
+          pulse_M[i] = default_M[i]+7;
+          ledcWrite(i+3,pulse_M[i]);
+          }
         }
         else
         {
           for(i = 0; i<4 ; i++)
-          pulse_M[i] = default_M[i]-10;
+          {
+          pulse_M[i] = default_M[i]-7;
+          ledcWrite(i+3,pulse_M[i]);
+          }
         }
-
-
       }
-    }
       else
       {
-        Initial_Yaw = Yaw_difference;
+        for(i = 0; i<4 ; i++)
+        {
+        pulse_M[i] = default_M[i];
+        ledcWrite(i+3,pulse_M[i]);
+        }
         Rotate_angle = 0;
+        ICM20948_GET_READING_QUAT6(&Yaw);
+        Initial_Yaw = Yaw;
       }
-      
+
     }
-    else if( Magnitude > 30) 
+
+      
+    
+    if( Magnitude_L > 30) 
     {
       for(i=0;i<4;i++)
       {
@@ -264,19 +446,21 @@ void loop()
       Serial.print("is: ");
       Serial.println (pulse_M[i]);
       }
+      for(i = 0; i < 4; i++)
+    {
+        ledcWrite(i+3,pulse_M[i]);
+    }
     }
       
-    else
+    if( Magnitude_L < 30 && Magnitude_R <30) 
     {
       for(i = 0; i < 4; i++)
       {
         pulse_M[i]=default_M[i];
+        ledcWrite(i+3,pulse_M[i]);
       }
     }
-    for(i = 0; i < 4; i++)
-    {
-        ledcWrite(i,pulse_M[i]);
-    }
+    
     
   }
 }
