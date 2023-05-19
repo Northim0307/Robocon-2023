@@ -124,6 +124,11 @@ int speed_count = 0;
 
 float rpm = 0;
 
+int DJI_Increase_Speed=0;
+
+bool Fkipsky_Chg_Spd=false;
+bool Aim_successful = false;
+char Lidar_signal;
 
   
   //using myservo will automatically search for avaiable pwm channel start from channel 0
@@ -259,6 +264,12 @@ void loop()
 
     if (ps5.Triangle())   //push servo
     {
+      myservo1.write(12); // rotate the servo to 180 degrees to close
+      myservo2.write(128);
+      delay(300);
+      myservo1.write(5); // rotate the servo to 180 degrees to close
+      myservo2.write(136); // rotate the servo to 180 degrees to close
+      delay(500);
       myservo3.write(35);
       delay(500);
       myservo3.write(155);
@@ -305,6 +316,77 @@ void loop()
     {
       ledcWrite(l_actuator_pwm_channel,0);
     }
+
+
+
+    // if (ps5.Left())
+    // {
+    //   Aim_successful == false;
+    //   DJI_Increase_Speed = -3;
+    //   Magnitude_L=100;
+    //   Angle_L = 170;
+
+      
+    //   while(Aim_successful == false)
+    //   {
+    //     calc_robot_dir ( &Magnitude_L , &Angle_L, pulse_M , default_M,Motor_dir,DJI_Increase_Speed);
+    //     for(i=0;i<4;i++)
+    //     {
+    //     Setpoint_Adjust_Yaw (Yaw_difference, i,Motor_dir[i], pulse_M , SPEED_CHG_PER_YAW );
+    //     Serial.print("Setpoint of Motor:");
+    //     Serial.print(i);
+    //     Serial.print("is: ");
+    //     Serial.println (pulse_M[i]);
+    //     }
+    //     for(i = 0; i < 4; i++)
+    //     {
+    //       ledcWrite(i+3,pulse_M[i]);
+    //     }
+      
+    //     digitalWrite(13,HIGH);
+    //     while(Serial.available()<0);
+
+    //     Lidar_signal = Serial.read();
+    //     // if(Lidar_signal=='L')
+    //     // {
+    //     //   /*bad practice here need change later*/
+    //     //   Magnitude_L=100;
+    //     //   Angle_L = 170;
+
+    //     //   calc_robot_dir ( &Magnitude_L , &Angle_L, pulse_M , default_M,Motor_dir,DJI_Increase_Speed);
+    //     // }
+    //     if(Lidar_signal=='M')
+    //     {
+    //       for(i = 0; i < 4; i++)
+    //       {
+    //         pulse_M[i]=default_M[i];
+    //         ledcWrite(i+3,pulse_M[i]);
+    //       }
+    //       Aim_successful == true;
+    //     }
+    //   }
+    // }
+
+    if (ps5.Right())
+    {
+      DJI_Increase_Speed += 1;
+      if(DJI_Increase_Speed> 10)
+      {
+        DJI_Increase_Speed=10;
+
+      }
+    }
+
+    if (ps5.Left())
+    {
+      DJI_Increase_Speed -=1;
+      if(DJI_Increase_Speed<-3)
+      {
+        DJI_Increase_Speed = -3;
+
+      }
+    }
+ 
  
 
     if (ps5.Cross())
@@ -330,7 +412,7 @@ void loop()
     // {
       Analog_Stick_Calc(float(ps5.LStickX()),float(ps5.LStickY()), &Magnitude_L , &Angle_L );
       Analog_Stick_Calc(float(ps5.RStickX()),float(ps5.RStickY()), &Magnitude_R , &Angle_R );
-      calc_robot_dir ( &Magnitude_L , &Angle_L, pulse_M , default_M,Motor_dir);
+      calc_robot_dir ( &Magnitude_L , &Angle_L, pulse_M , default_M,Motor_dir,DJI_Increase_Speed);
     // }
 
     if(Magnitude_R>40)
@@ -351,9 +433,10 @@ void loop()
         ledcWrite(i+3,pulse_M[i]);
         }
       }
-      if((Angle_R>60 && Angle_R <=120))
+      if((Angle_R>60 && Angle_R <=120)&&Fkipsky_Chg_Spd==false)
       {
-        rpm = rpm + 700;
+        Fkipsky_Chg_Spd = true;
+        rpm = rpm + 200;
         if(rpm>FLIPSKY_HIGHEST_RPM)
         {
           rpm=FLIPSKY_HIGHEST_RPM;
@@ -363,9 +446,10 @@ void loop()
         Serial.println(rpm);
 
       }
-      if((Angle_R<-60 && Angle_R >=-120))
+      if((Angle_R<-60 && Angle_R >=-120)&&Fkipsky_Chg_Spd==false)
       {
-        rpm = rpm - 700;
+        Fkipsky_Chg_Spd = true;
+        rpm = rpm - 200;
         if(rpm<FLIPSKY_LOWEST_RPM)
         {
           rpm=FLIPSKY_LOWEST_RPM;
@@ -374,6 +458,10 @@ void loop()
         Serial.println(rpm);
 
       }
+    }
+    else
+    {
+      Fkipsky_Chg_Spd = false;
     }
 	
 
