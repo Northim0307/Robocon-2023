@@ -974,7 +974,7 @@ void Encoder_Calc ( float distance_x, float distance_y, float *magnitude, float 
 
 
 
-void calc_robot_dir ( float *magnitude , float *angle, int setpoint_m[4] , const int optimum_speed_m[4],int motor_direction[4])
+void calc_robot_dir ( float *magnitude , float *angle, int setpoint_m[4] , const int optimum_speed_m[4],int motor_direction[4],int dji_speed_increase)
 {
 	float ratio_speed_m[4];
 	float ratio;
@@ -1012,10 +1012,10 @@ if(*magnitude <30 )
 	{
 		// *robot_dir_now = RIGHTWARD;
 		ratio = *angle / 90;
-		setpoint_m[0] = optimum_speed_m[0]+12;
-		setpoint_m[1] = optimum_speed_m[1]+12;
-		setpoint_m[2] = optimum_speed_m[2]-12;
-		setpoint_m[3] = optimum_speed_m[3]-12;
+		setpoint_m[0] = optimum_speed_m[0]+12+dji_speed_increase;
+		setpoint_m[1] = optimum_speed_m[1]+12+dji_speed_increase;
+		setpoint_m[2] = optimum_speed_m[2]-12-dji_speed_increase;
+		setpoint_m[3] = optimum_speed_m[3]-12-dji_speed_increase;
 		
 	}
 	
@@ -1023,9 +1023,9 @@ if(*magnitude <30 )
 	{
 		// *robot_dir_now = UPWARD_RIGHT;
 		ratio = *angle / 90;
-		setpoint_m[0] = optimum_speed_m[0]+12;
+		setpoint_m[0] = optimum_speed_m[0]+12+dji_speed_increase;
 		setpoint_m[1] = optimum_speed_m[1];
-		setpoint_m[2] = optimum_speed_m[2]-12;
+		setpoint_m[2] = optimum_speed_m[2]-12-dji_speed_increase;
 		setpoint_m[3] = optimum_speed_m[3];
 	}
 	
@@ -1033,58 +1033,58 @@ if(*magnitude <30 )
 	{
 		// *robot_dir_now = FORWARD;
 		ratio = *angle / 90;
-		setpoint_m[0] = optimum_speed_m[0]+12;
-		setpoint_m[1] = optimum_speed_m[1]-12;
-		setpoint_m[2] = optimum_speed_m[2]-12;
-		setpoint_m[3] = optimum_speed_m[3]+12;
+		setpoint_m[0] = optimum_speed_m[0]+12+dji_speed_increase;
+		setpoint_m[1] = optimum_speed_m[1]-12-dji_speed_increase;
+		setpoint_m[2] = optimum_speed_m[2]-12-dji_speed_increase;
+		setpoint_m[3] = optimum_speed_m[3]+12+dji_speed_increase;
 	}
 	
 	else if(*angle>90 && *angle <=120)
 	{
 		// *robot_dir_now = FORWARD;
 		ratio = (*angle-90) / 90;
-		setpoint_m[0] = optimum_speed_m[0]+12;
-		setpoint_m[1] = optimum_speed_m[1]-12;
-		setpoint_m[2] = optimum_speed_m[2]-12;
-		setpoint_m[3] = optimum_speed_m[3]+12;
+		setpoint_m[0] = optimum_speed_m[0]+12+dji_speed_increase;
+		setpoint_m[1] = optimum_speed_m[1]-12-dji_speed_increase;
+		setpoint_m[2] = optimum_speed_m[2]-12-dji_speed_increase;
+		setpoint_m[3] = optimum_speed_m[3]+12+dji_speed_increase;
 	}
 	
 	else if(*angle>120 && *angle <=150)
 	{
 		// *robot_dir_now = UPWARD_LEFT;
 		setpoint_m[0] = optimum_speed_m[0];
-		setpoint_m[1] = optimum_speed_m[1]-12;
+		setpoint_m[1] = optimum_speed_m[1]-12-dji_speed_increase;
 		setpoint_m[2] = optimum_speed_m[2];
-		setpoint_m[3] = optimum_speed_m[3]+12;
+		setpoint_m[3] = optimum_speed_m[3]+12+dji_speed_increase;
 	}
 	
 	else if(*angle>150 && *angle <=180)
 	{
 		// *robot_dir_now = LEFTWARD;
 		ratio = (*angle-90) / 90;
-		setpoint_m[0] = optimum_speed_m[0]-12;
-		setpoint_m[1] = optimum_speed_m[1]-12;
-		setpoint_m[2] = optimum_speed_m[2]+12;
-		setpoint_m[3] = optimum_speed_m[3]+12;
+		setpoint_m[0] = optimum_speed_m[0]-12-dji_speed_increase;
+		setpoint_m[1] = optimum_speed_m[1]-12-dji_speed_increase;
+		setpoint_m[2] = optimum_speed_m[2]+12+dji_speed_increase;
+		setpoint_m[3] = optimum_speed_m[3]+12+dji_speed_increase;
 	}
 	
 	else if(*angle>-180 && *angle <=-150)
 	{
 		// *robot_dir_now = LEFTWARD;
 		ratio = (*angle+180) / 90;
-		setpoint_m[0] = optimum_speed_m[0]-12;
-		setpoint_m[1] = optimum_speed_m[1]-15;
-		setpoint_m[2] = optimum_speed_m[2]+12;
-		setpoint_m[3] = optimum_speed_m[3]+12;
+		setpoint_m[0] = optimum_speed_m[0]-12-dji_speed_increase;
+		setpoint_m[1] = optimum_speed_m[1]-12-dji_speed_increase;
+		setpoint_m[2] = optimum_speed_m[2]+12+dji_speed_increase;
+		setpoint_m[3] = optimum_speed_m[3]+12+dji_speed_increase;
 	}
 	
 	else if(*angle>-150 && *angle <=-120)
 	{
 		// *robot_dir_now = DOWNWARD_LEFT;
 		ratio = (*angle+180) / 90;
-		setpoint_m[0] = optimum_speed_m[0]-12;
+		setpoint_m[0] = optimum_speed_m[0]-12-dji_speed_increase;
 		setpoint_m[1] = optimum_speed_m[1];
-		setpoint_m[2] = optimum_speed_m[2]+12;
+		setpoint_m[2] = optimum_speed_m[2]+12+dji_speed_increase;
 		setpoint_m[3] = optimum_speed_m[3];
 	}
 	
@@ -1092,20 +1092,20 @@ if(*magnitude <30 )
 	{
 		// *robot_dir_now = BACKWARD;
 		ratio = (*angle+180) / 90;
-		setpoint_m[0] = optimum_speed_m[0]-12;
-		setpoint_m[1] = optimum_speed_m[1]+12;
-		setpoint_m[2] = optimum_speed_m[2]+12;
-		setpoint_m[3] = optimum_speed_m[3]-12;
+		setpoint_m[0] = optimum_speed_m[0]-12-dji_speed_increase;
+		setpoint_m[1] = optimum_speed_m[1]+12+dji_speed_increase;
+		setpoint_m[2] = optimum_speed_m[2]+12+dji_speed_increase;
+		setpoint_m[3] = optimum_speed_m[3]-12-dji_speed_increase;
 	}
 	
 	else if(*angle>-90 && *angle <=-60)
 	{
 		// *robot_dir_now = BACKWARD;
 		ratio = -(*angle) / 90;
-		setpoint_m[0] = optimum_speed_m[0]-12;
-		setpoint_m[1] = optimum_speed_m[1]+12;
-		setpoint_m[2] = optimum_speed_m[2]+12;
-		setpoint_m[3] = optimum_speed_m[3]-12;
+		setpoint_m[0] = optimum_speed_m[0]-12-dji_speed_increase;
+		setpoint_m[1] = optimum_speed_m[1]+12+dji_speed_increase;
+		setpoint_m[2] = optimum_speed_m[2]+12+dji_speed_increase;
+		setpoint_m[3] = optimum_speed_m[3]-12-dji_speed_increase;
 	}
 	
 	else if(*angle>-60 && *angle <=-30)
@@ -1113,19 +1113,19 @@ if(*magnitude <30 )
 		// *robot_dir_now = DOWNWARD_RIGHT;
 		ratio = -(*angle) / 90;
 		setpoint_m[0] = optimum_speed_m[0];
-		setpoint_m[1] = optimum_speed_m[1]+12;
+		setpoint_m[1] = optimum_speed_m[1]+12+dji_speed_increase;
 		setpoint_m[2] = optimum_speed_m[2];
-		setpoint_m[3] = optimum_speed_m[3]-12;
+		setpoint_m[3] = optimum_speed_m[3]-12-dji_speed_increase;
 	}
 	
 	else if(*angle>-30 && *angle <=0)
 	{
 		// *robot_dir_now = RIGHTWARD;
 		ratio = -(*angle) / 90;
-		setpoint_m[0] = optimum_speed_m[0]+12;
-		setpoint_m[1] = optimum_speed_m[1]+12;
-		setpoint_m[2] = optimum_speed_m[2]-12;
-		setpoint_m[3] = optimum_speed_m[3]-12;
+		setpoint_m[0] = optimum_speed_m[0]+12+dji_speed_increase;
+		setpoint_m[1] = optimum_speed_m[1]+12+dji_speed_increase;
+		setpoint_m[2] = optimum_speed_m[2]-12-dji_speed_increase;
+		setpoint_m[3] = optimum_speed_m[3]-12-dji_speed_increase;
 	}
 	
 	for(int k = 0; k < 4;k++)
