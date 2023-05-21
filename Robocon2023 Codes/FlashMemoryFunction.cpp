@@ -1,3 +1,6 @@
+float angle;
+int motorspeed;
+
 void saveData(float angle, int motorSpeed) {
   const int angleAddr = 0;
   const int motorSpeedAddr = sizeof(float); 
@@ -30,3 +33,7 @@ void readData(float &angle, int &motorSpeed) {
     motorSpeedPtr[i] = EEPROM.read(motorSpeedAddr + i);
   }
 }
+
+/*later when you want to retrieve the saved data, just call the function readData(angle, int motorSpeed)
+ it then will passed the data into angle and motorspeed.
+*/
