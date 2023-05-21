@@ -36,5 +36,5 @@ void readData(float &angle, int &motorSpeed) {
 }
 
 /*later when you want to retrieve the saved data, just call the function readData(angle, int motorSpeed)
- it then will passed the data into angle and motorspeed.
+ it then will passed the data into angle and motorspeed variable.
 */
