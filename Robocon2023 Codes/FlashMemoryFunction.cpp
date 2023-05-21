@@ -3,7 +3,7 @@ int motorspeed;
 
 void saveData(float angle, int motorSpeed) {
   const int angleAddr = 0;
-  const int motorSpeedAddr = sizeof(float); 
+  const int motorSpeedAddr = sizeof(float) + angleAddr; 
 
   byte* anglePtr = (byte*)(&angle);
   for (int i = 0; i < sizeof(float); i++) {
@@ -21,7 +21,7 @@ void saveData(float angle, int motorSpeed) {
 
 void readData(float &angle, int &motorSpeed) {
   const int angleAddr = 0;
-  const int motorSpeedAddr = sizeof(float);
+  const int motorSpeedAddr = sizeof(float) + angleAddr; 
 
   byte* anglePtr = (byte*)(&angle);
   for (int i = 0; i < sizeof(float); i++) {
