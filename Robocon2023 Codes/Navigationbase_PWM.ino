@@ -38,6 +38,8 @@
 #define FLIPSKY_HIGHEST_RPM 24500
 #define FLIPSKY_LOWEST_RPM 3500
 
+#define POLE_DISTANCE 100 //in cm
+
 
 VescUart vesc1;
 
@@ -130,6 +132,8 @@ bool Fkipsky_Chg_Spd=false;
 bool Aim_successful = false;
 char Lidar_signal;
 
+int Lidar_Distance;
+
   
   //using myservo will automatically search for avaiable pwm channel start from channel 0
   Servo myservo1;
@@ -150,7 +154,7 @@ void setup()
 
   vesc1.setSerialPort(&Serial2); //&serial
 
-  pinMode(LIMIT_SW_PIN, INPUT);
+  pinMode(LIMIT_SW_PIN, INPUT_PULLUP);
   pinMode(L_ACTUATOR_DIR_PIN,OUTPUT);
   pinMode(P_WINDOW_DIR_PIN,OUTPUT);
   
@@ -166,11 +170,12 @@ void setup()
   ledcAttachPin(L_ACTUATOR_PWM_PIN,l_actuator_pwm_channel);
   ledcAttachPin(P_WINDOW_PWM_PIN,p_window_pwm_channel);
   
-  attachInterrupt(digitalPinToInterrupt(LIMIT_SW_PIN),Stop_P_Window,RISING);
+  attachInterrupt(digitalPinToInterrupt(LIMIT_SW_PIN),Stop_P_Window,FALLING);
 
-  ps5.begin("00:BE:3B:F7:2D:51");
+  // ps5.begin("00:BE:3B:F7:2D:51"); //WHITE CONTROLLER
+  ps5.begin("1C:15:1F:41:39:0A"); //BLACK CONTROLLER
   //ps5.begin("D8:9E:61:A0:93:74"); //replace with your MAC address
-  Serial.println("Ready.");
+  //Serial.println("Ready.");
 
   ICM20948_SETUP_QUAT6();
 
@@ -191,8 +196,8 @@ void setup()
   }
 
 
-  Serial.print("Initial Yaw: ");
-  Serial.println(Initial_Yaw);
+  //Serial.print("Initial Yaw: ");
+  //Serial.println(Initial_Yaw);
 
   
 
@@ -209,18 +214,18 @@ void setup()
   ledcWrite(motor2_pwm_channel,pulse_M[1]=MOTOR2_STARTING);
   ledcWrite(motor3_pwm_channel,pulse_M[2]=MOTOR3_STARTING);
   ledcWrite(motor4_pwm_channel,pulse_M[3]=MOTOR4_STARTING);
+
+     
   
 
 }
 
 void Stop_P_Window()
 {
-  if(digitalRead(LIMIT_SW_PIN))
+  if(digitalRead(LIMIT_SW_PIN)==0)
   {
     ledcWrite(p_window_pwm_channel,0);
   }
-  return;
-
 }
 
 void loop()
@@ -229,10 +234,11 @@ void loop()
   {
 		vesc1.setRPM(rpm);			  
         ICM20948_GET_READING_QUAT6(&Yaw);
-        Serial.print("Yaw_reading:\t");
-        Serial.print(Yaw);
-        Serial.print("\xC2\xB0"); //Print degree symbol
-        Serial.println();
+        // Lidar_Distance = Get_Lidar_data();
+        //Serial.print("Yaw_reading:\t");
+        //Serial.print(Yaw);
+        //Serial.print("\xC2\xB0"); //Print degree symbol
+        //Serial.println();
         Yaw_difference = Initial_Yaw - Yaw ;
         if(Yaw_difference>=180)
         {
@@ -242,17 +248,17 @@ void loop()
         {
           Yaw_difference = Yaw_difference + 360;
         }
-        Serial.print("Yaw:\t");
-        Serial.print(Yaw_difference);
-        Serial.print("\xC2\xB0"); //Print degree symbol
-        Serial.println();
+        //Serial.print("Yaw:\t");
+        //Serial.print(Yaw_difference);
+        //Serial.print("\xC2\xB0"); //Print degree symbol
+        //Serial.println();
 
     if (ps5.PSButton())
     {
       ICM20948_GET_READING_QUAT6(&Yaw);
       Initial_Yaw = Yaw;
-      Serial.print("Initial Yaw: ");
-      Serial.println(Initial_Yaw);
+      //Serial.print("Initial Yaw: ");
+      //Serial.println(Initial_Yaw);
 
     }
 
@@ -269,9 +275,17 @@ void loop()
       delay(300);
       myservo1.write(5); // rotate the servo to 180 degrees to close
       myservo2.write(136); // rotate the servo to 180 degrees to close
-      delay(500);
+      current_millis = millis();
+      while(millis()-current_millis<500)
+      {
+        vesc1.setRPM(rpm);
+      }
       myservo3.write(35);
-      delay(500);
+      current_millis = millis();
+      while(millis()-current_millis<500)
+      {
+        vesc1.setRPM(rpm);
+      }
       myservo3.write(155);
     }
     
@@ -290,12 +304,12 @@ void loop()
     if (ps5.L1())
     {
       digitalWrite(P_WINDOW_DIR_PIN,HIGH);
-      ledcWrite(p_window_pwm_channel,80);
+      ledcWrite(p_window_pwm_channel,120);
     }
-    else if(ps5.L2())
+    else if(ps5.L2()&&(digitalRead(LIMIT_SW_PIN)==HIGH))
     {
       digitalWrite(P_WINDOW_DIR_PIN,LOW);
-      ledcWrite(p_window_pwm_channel,80);
+      ledcWrite(p_window_pwm_channel,120);
     }
     else
     {
@@ -317,8 +331,6 @@ void loop()
       ledcWrite(l_actuator_pwm_channel,0);
     }
 
-
-
     // if (ps5.Left())
     // {
     //   Aim_successful == false;
@@ -329,24 +341,23 @@ void loop()
       
     //   while(Aim_successful == false)
     //   {
+    //     Lidar_Distance = Get_Lidar_data();
+    //     if(Lidar_Distance < POLE_DISTANCE)
+    //     {
     //     calc_robot_dir ( &Magnitude_L , &Angle_L, pulse_M , default_M,Motor_dir,DJI_Increase_Speed);
     //     for(i=0;i<4;i++)
     //     {
     //     Setpoint_Adjust_Yaw (Yaw_difference, i,Motor_dir[i], pulse_M , SPEED_CHG_PER_YAW );
-    //     Serial.print("Setpoint of Motor:");
-    //     Serial.print(i);
-    //     Serial.print("is: ");
-    //     Serial.println (pulse_M[i]);
     //     }
     //     for(i = 0; i < 4; i++)
     //     {
     //       ledcWrite(i+3,pulse_M[i]);
     //     }
       
-    //     digitalWrite(13,HIGH);
-    //     while(Serial.available()<0);
+    //     // digitalWrite(13,HIGH);
+    //     // while(Serial.available()<0);
 
-    //     Lidar_signal = Serial.read();
+    //     // Lidar_signal = Serial.read();
     //     // if(Lidar_signal=='L')
     //     // {
     //     //   /*bad practice here need change later*/
@@ -355,14 +366,20 @@ void loop()
 
     //     //   calc_robot_dir ( &Magnitude_L , &Angle_L, pulse_M , default_M,Motor_dir,DJI_Increase_Speed);
     //     // }
-    //     if(Lidar_signal=='M')
+    //     // if(Lidar_signal=='M')
+    //     // {
+    //     //   for(i = 0; i < 4; i++)
+    //     //   {
+    //     //     pulse_M[i]=default_M[i];
+    //     //     ledcWrite(i+3,pulse_M[i]);
+    //     //   }
+    //     //   Aim_successful == true;
+    //     // }
+    //     }
+    //     else
     //     {
-    //       for(i = 0; i < 4; i++)
-    //       {
-    //         pulse_M[i]=default_M[i];
-    //         ledcWrite(i+3,pulse_M[i]);
-    //       }
-    //       Aim_successful == true;
+    //       Aim_successful=true;
+    //       break;
     //     }
     //   }
     // }
@@ -442,8 +459,8 @@ void loop()
           rpm=FLIPSKY_HIGHEST_RPM;
 
         }
-        Serial.print("rpm_now: ");
-        Serial.println(rpm);
+        //Serial.print("rpm_now: ");
+        //Serial.println(rpm);
 
       }
       if((Angle_R<-60 && Angle_R >=-120)&&Fkipsky_Chg_Spd==false)
@@ -454,8 +471,8 @@ void loop()
         {
           rpm=FLIPSKY_LOWEST_RPM;
         }
-        Serial.print("rpm_now: ");
-        Serial.println(rpm);
+        //Serial.print("rpm_now: ");
+        //Serial.println(rpm);
 
       }
     }
@@ -529,10 +546,10 @@ void loop()
       for(i=0;i<4;i++)
       {
       Setpoint_Adjust_Yaw (Yaw_difference, i,Motor_dir[i], pulse_M , SPEED_CHG_PER_YAW );
-      Serial.print("Setpoint of Motor:");
-      Serial.print(i);
-      Serial.print("is: ");
-      Serial.println (pulse_M[i]);
+      //Serial.print("Setpoint of Motor:");
+      //Serial.print(i);
+      //Serial.print("is: ");
+      //Serial.println (pulse_M[i]);
       }
       for(i = 0; i < 4; i++)
     {
