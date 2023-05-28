@@ -1,40 +1,37 @@
-float angle;
-int motorspeed;
+#include <EEPROM.h>
 
-void saveData(float angle, int motorSpeed) {
-  const int angleAddr = 0;
-  
+float angle = 46.67;
+int motorSpeed = 123;
 
-  byte* anglePtr = (byte*)(&angle);
-  for (int i = 0; i < sizeof(float); i++) {
-    EEPROM.write(angleAddr + i, anglePtr[i]);
-  }
-  
-  const int motorSpeedAddr = sizeof(float) + angleAddr; 
-  byte* motorSpeedPtr = (byte*)(&motorSpeed);
-  for (int i = 0; i < sizeof(int); i++) {
-    EEPROM.write(motorSpeedAddr + i, motorSpeedPtr[i]);
-  }
+float savedAngle;
+int savedMotorSpeed;
 
+void saveData() {
+  EEPROM.write(0, angle);
+  EEPROM.write(1, motorSpeed);
   EEPROM.commit();
 }
 
-
-void readData(float &angle, int &motorSpeed) {
-  const int angleAddr = 0;
-
-  byte* anglePtr = (byte*)(&angle);
-  for (int i = 0; i < sizeof(float); i++) {
-    anglePtr[i] = EEPROM.read(angleAddr + i);
-  }
-
-  const int motorSpeedAddr = sizeof(float) + angleAddr; 
-  byte* motorSpeedPtr = (byte*)(&motorSpeed);
-  for (int i = 0; i < sizeof(int); i++) {
-    motorSpeedPtr[i] = EEPROM.read(motorSpeedAddr + i);
-  }
+void readData() {
+  savedAngle = EEPROM.read(0);
+  savedMotorSpeed = EEPROM.read(1);
 }
 
-/*later when you want to retrieve the saved data, just call the function readData(angle, int motorSpeed)
- it then will passed the data into angle and motorspeed variable.
-*/
+void setup() {
+  Serial.begin(115200);
+
+  EEPROM.begin(512);
+
+  saveData();
+}
+
+void loop() {
+  readData();
+
+  Serial.print("Saved Angle: ");
+  Serial.println(savedAngle);
+  Serial.print("Saved Motor speed: ");
+  Serial.println(savedMotorSpeed);
+
+  delay(1000);
+}
