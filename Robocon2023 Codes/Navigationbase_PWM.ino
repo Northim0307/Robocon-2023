@@ -129,6 +129,14 @@ float rpm = 0;
 int DJI_Increase_Speed=0;
 
 bool Fkipsky_Chg_Spd=false;
+bool L1_Pressed = false;
+bool L2_Pressed = false;
+bool Circle_Pressed = false;
+
+bool Grip_Servo = false; 
+
+
+
 bool Aim_successful = false;
 char Lidar_signal;
 
@@ -289,24 +297,33 @@ void loop()
       myservo3.write(155);
     }
     
-    if (ps5.R1())
+    if (ps5.Circle() && (Circle_Pressed == false))
     {
+      Circle_Pressed = true;
+      if(Grip_Servo ==false)
+      {
+        Grip_Servo = true;
         myservo1.write(5); // rotate the servo to 180 degrees to close
         myservo2.write(136); // rotate the servo to 180 degrees to close
-    }
-    if (ps5.R2())
+      }
+      if(Grip_Servo == true)
       {
+        Grip_Servo = false;
         myservo1.write(32); // rotate the servo to 0 degrees to open
         myservo2.write(98);
       }
-    
+    }
+    else
+    {
+      Circle_Pressed = false;
+    }
 
-    if (ps5.L1())
+    if (ps5.R1())
     {
       digitalWrite(P_WINDOW_DIR_PIN,HIGH);
       ledcWrite(p_window_pwm_channel,120);
     }
-    else if(ps5.L2()&&(digitalRead(LIMIT_SW_PIN)==HIGH))
+    else if(ps5.R2()&&(digitalRead(LIMIT_SW_PIN)==HIGH))
     {
       digitalWrite(P_WINDOW_DIR_PIN,LOW);
       ledcWrite(p_window_pwm_channel,120);
@@ -331,77 +348,81 @@ void loop()
       ledcWrite(l_actuator_pwm_channel,0);
     }
 
-    // if (ps5.Left())
-    // {
-    //   Aim_successful == false;
-    //   DJI_Increase_Speed = -3;
-    //   Magnitude_L=100;
-    //   Angle_L = 170;
-
-      
-    //   while(Aim_successful == false)
-    //   {
-    //     Lidar_Distance = Get_Lidar_data();
-    //     if(Lidar_Distance < POLE_DISTANCE)
-    //     {
-    //     calc_robot_dir ( &Magnitude_L , &Angle_L, pulse_M , default_M,Motor_dir,DJI_Increase_Speed);
-    //     for(i=0;i<4;i++)
-    //     {
-    //     Setpoint_Adjust_Yaw (Yaw_difference, i,Motor_dir[i], pulse_M , SPEED_CHG_PER_YAW );
-    //     }
-    //     for(i = 0; i < 4; i++)
-    //     {
-    //       ledcWrite(i+3,pulse_M[i]);
-    //     }
-      
-    //     // digitalWrite(13,HIGH);
-    //     // while(Serial.available()<0);
-
-    //     // Lidar_signal = Serial.read();
-    //     // if(Lidar_signal=='L')
-    //     // {
-    //     //   /*bad practice here need change later*/
-    //     //   Magnitude_L=100;
-    //     //   Angle_L = 170;
-
-    //     //   calc_robot_dir ( &Magnitude_L , &Angle_L, pulse_M , default_M,Motor_dir,DJI_Increase_Speed);
-    //     // }
-    //     // if(Lidar_signal=='M')
-    //     // {
-    //     //   for(i = 0; i < 4; i++)
-    //     //   {
-    //     //     pulse_M[i]=default_M[i];
-    //     //     ledcWrite(i+3,pulse_M[i]);
-    //     //   }
-    //     //   Aim_successful == true;
-    //     // }
-    //     }
-    //     else
-    //     {
-    //       Aim_successful=true;
-    //       break;
-    //     }
-    //   }
-    // }
-
-    if (ps5.Right())
+    if (ps5.Left())
     {
+      Aim_successful = false;
+      DJI_Increase_Speed = -3;
+      Magnitude_L=90;
+      Angle_L = 180;
+
+      while(Aim_successful == false)
+      {
+        Lidar_Distance = Get_Lidar_data();
+        if(Lidar_Distance > POLE_DISTANCE)
+        {
+          
+          calc_robot_dir ( &Magnitude_L , &Angle_L, pulse_M , default_M,Motor_dir,DJI_Increase_Speed);
+
+          ICM20948_GET_READING_QUAT6(&Yaw);
+          Yaw_difference = Initial_Yaw - Yaw ;
+          if(Yaw_difference>=180)
+          {
+            Yaw_difference = Yaw_difference- 360;    // if positive then is towards clockwise, if negative then is towards anticlockwise
+          }
+          else if (Yaw_difference<-180)
+          {
+            Yaw_difference = Yaw_difference + 360;
+          }
+
+          for(i=0;i<4;i++)
+          {
+          Setpoint_Adjust_Yaw (Yaw_difference, i,Motor_dir[i], pulse_M , SPEED_CHG_PER_YAW );
+          }
+
+          for(i = 0; i < 4; i++)
+          {
+            ledcWrite(i+3,pulse_M[i]);
+          }
+      
+        }
+        else
+        {
+          for(i = 0; i < 4; i++)
+          {
+            ledcWrite(i+3,default_M[i]);
+          }
+          Aim_successful=true;
+          break;
+        }
+      }
+    }
+
+    if (ps5.L2()&& (L2_Pressed == false))
+    {
+      L2_Pressed = true;
       DJI_Increase_Speed += 1;
       if(DJI_Increase_Speed> 10)
       {
         DJI_Increase_Speed=10;
-
       }
     }
-
-    if (ps5.Left())
+    else
     {
+      L2_Pressed = false;
+    }
+
+    if (ps5.L1() && (L1_Pressed == false))
+    {
+      L1_Pressed = true;
       DJI_Increase_Speed -=1;
       if(DJI_Increase_Speed<-3)
       {
         DJI_Increase_Speed = -3;
-
       }
+    }
+    else
+    {
+      L1_Pressed = false;
     }
  
  
@@ -421,10 +442,10 @@ void loop()
       
     }
 
-    if(ps5.Circle())
-    {
-      Rotate_angle = 90; //because if rotate clockwise is negative angle 
-    }
+    // if(ps5.Circle())
+    // {
+    //   Rotate_angle = 90; //because if rotate clockwise is negative angle 
+    // }
     // else
     // {
       Analog_Stick_Calc(float(ps5.LStickX()),float(ps5.LStickY()), &Magnitude_L , &Angle_L );
