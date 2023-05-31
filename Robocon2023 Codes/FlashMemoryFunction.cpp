@@ -1,7 +1,7 @@
 #include <EEPROM.h>
 
 //if the float data is higher, the next variable must skip 1 address
-//if the data data is higher, the next variable must skip 2 address
+//if the int data is higher, the next variable must skip 2 address
 
 float inita = 10.66;
 int initb = 50;
