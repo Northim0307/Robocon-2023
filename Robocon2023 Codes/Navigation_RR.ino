@@ -353,10 +353,10 @@ void loop()
         Yaw_difference = Yaw_difference + 360;
       }
 
-      Serial.print("Yaw:\t");
-      Serial.print(Yaw_difference);
-      Serial.print("\xC2\xB0"); //Print degree symbol
-      Serial.println();
+      // Serial.print("Yaw:\t");
+      // Serial.print(Yaw_difference);
+      // Serial.print("\xC2\xB0"); //Print degree symbol
+      // Serial.println();
 
       if (ps5.PSButton())
       {
