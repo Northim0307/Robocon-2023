@@ -1,6 +1,6 @@
 // #include <mcp_can.h>
 // #include <SPI.h>
-#include <PID_v1.h>
+// #include <PID_v1.h>
 #include <ps5Controller.h>
 #include "Arduino.h"
 // #include <MPU9250.h>
@@ -12,8 +12,8 @@
 
 #define SERVO_1_PIN  12
 #define SERVO_2_PIN  14
-#define SERVO_3_PIN  4
-#define LIMIT_SW_PIN 2
+#define SERVO_3_PIN  2
+#define LIMIT_SW_PIN 4
 
 #define L_ACTUATOR_PWM_PIN 27
 #define L_ACTUATOR_DIR_PIN 26
@@ -61,9 +61,6 @@ int resolution_dji = 8; //max is 255
 
 double Initial_Yaw=0;
 double Old_Yaw, Yaw =0, Yaw_difference =0;
-double Initial_Pitch=0;
-double Old_Pitch, Pitch = 0, Pitch_difference = 0;
-double Target_Pitch = 0 ;
 unsigned long current_millis;
 
 bool Grip_Close=true;
@@ -183,8 +180,8 @@ void setup()
   
   attachInterrupt(digitalPinToInterrupt(LIMIT_SW_PIN),Stop_P_Window,FALLING);
 
-  ps5.begin("00:BE:3B:F7:2D:51"); //WHITE CONTROLLER
-  // ps5.begin("1C:15:1F:41:39:0A"); //BLACK CONTROLLER
+  // ps5.begin("00:BE:3B:F7:2D:51"); //WHITE CONTROLLER
+  ps5.begin("1C:15:1F:41:39:0A"); //BLACK CONTROLLER
   //ps5.begin("D8:9E:61:A0:93:74"); //replace with your MAC address
   //Serial.println("Ready.");
 
@@ -194,21 +191,19 @@ void setup()
 
   // digitalWrite(2,HIGH);
 
-  while(Initial_Yaw==0 || Initial_Pitch==0 )
+  while(Initial_Yaw==0 )
   {
     current_millis = millis();
     while(millis()-current_millis<1500)
     {
-      ICM20948_GET_READING_QUAT6(&Yaw, &Pitch);
+      ICM20948_GET_READING_QUAT6(&Yaw);
     }
-    ICM20948_GET_READING_QUAT6(&Yaw, &Pitch);
-    if(fabs(Old_Yaw-Yaw)<0.05 && fabs(Old_Pitch-Pitch)<0.05)
+    ICM20948_GET_READING_QUAT6(&Yaw );
+    if(fabs(Old_Yaw-Yaw)<0.05)
     {
       Initial_Yaw=Yaw;
-      Initial_Pitch=Pitch;
     }
     Old_Yaw = Yaw;
-    Old_Pitch = Pitch;
   }
 
 
@@ -249,7 +244,7 @@ void loop()
   while (ps5.isConnected() == true) 
   {
 		vesc1.setRPM(rpm);			  
-        ICM20948_GET_READING_QUAT6(&Yaw, &Pitch);
+        ICM20948_GET_READING_QUAT6(&Yaw);
         // Lidar_Distance = Get_Lidar_data();
         //Serial.print("Yaw_reading:\t");
         //Serial.print(Yaw);
@@ -271,7 +266,7 @@ void loop()
 
     if (ps5.PSButton())
     {
-      ICM20948_GET_READING_QUAT6(&Yaw, &Pitch);
+      ICM20948_GET_READING_QUAT6(&Yaw);
       Initial_Yaw = Yaw;
       //Serial.print("Initial Yaw: ");
       //Serial.println(Initial_Yaw);
@@ -286,23 +281,25 @@ void loop()
 
     if (ps5.Triangle())   //push servo
     {
-      myservo1.write(72); // rotate the servo to 180 degrees to close
-      myservo2.write(80);
+      //open angle
+      myservo1.write(68); // rotate the servo to 180 degrees to close
+      myservo2.write(76);
       delay(300);
-      myservo1.write(76); // rotate the servo to 180 degrees to close
-      myservo2.write(76); // rotate the servo to 180 degrees to close
+            //close angle
+      myservo1.write(78); // rotate the servo to 180 degrees to close
+      myservo2.write(74); // rotate the servo to 180 degrees to close
+      current_millis = millis();
+      while(millis()-current_millis<500)
+      {
+        vesc1.setRPM(rpm);
+      }
+      myservo3.write(180);
       current_millis = millis();
       while(millis()-current_millis<500)
       {
         vesc1.setRPM(rpm);
       }
       myservo3.write(90);
-      current_millis = millis();
-      while(millis()-current_millis<500)
-      {
-        vesc1.setRPM(rpm);
-      }
-      myservo3.write(190);
     }
     
     if (ps5.Circle() )
@@ -312,15 +309,17 @@ void loop()
         Circle_Pressed = true;
         if(Grip_Servo ==false)
         {
+           //Close gripper
           Grip_Servo = true;
-          myservo1.write(76); // rotate the servo to 180 degrees to close
-          myservo2.write(76); // rotate the servo to 180 degrees to close
+          myservo1.write(78); // rotate the servo to 180 degrees to close
+          myservo2.write(74); // rotate the servo to 180 degrees to close
         }
         else
         {
+          //Open gripper
           Grip_Servo = false;
-          myservo1.write(66); // rotate the servo to 0 degrees to open
-          myservo2.write(86);
+          myservo1.write(60); // rotate the servo to 0 degrees to open
+          myservo2.write(90);
         }
       }
     }
@@ -331,32 +330,78 @@ void loop()
 
     if (ps5.R1())
     {
-      digitalWrite(P_WINDOW_DIR_PIN,HIGH);
-      ledcWrite(p_window_pwm_channel,120);
+      // Go up slow first for 0.5s
+      current_millis = millis();
+      while(millis()-current_millis<500)
+      {
+        digitalWrite(P_WINDOW_DIR_PIN,LOW);
+        ledcWrite(p_window_pwm_channel,120);
+        digitalWrite(L_ACTUATOR_DIR_PIN,LOW);
+        ledcWrite(l_actuator_pwm_channel,120);
+      }
+      //Go up fast at the middle for 0.5s
+      current_millis = millis();
+      while(millis()-current_millis<600)
+      {
+        digitalWrite(P_WINDOW_DIR_PIN,LOW);
+        ledcWrite(p_window_pwm_channel,200);
+        digitalWrite(L_ACTUATOR_DIR_PIN,LOW);
+        ledcWrite(l_actuator_pwm_channel,200);
+      }
+      // Last stage slow back for 0.5s
+      current_millis = millis();
+      while(millis()-current_millis<800)
+      {
+        digitalWrite(P_WINDOW_DIR_PIN,LOW);
+        ledcWrite(p_window_pwm_channel,100);
+        digitalWrite(L_ACTUATOR_DIR_PIN,LOW);
+        ledcWrite(l_actuator_pwm_channel,100);
+      }
     }
-    else if(ps5.R2()&&(digitalRead(LIMIT_SW_PIN)==HIGH))//
+    else if(ps5.R2())//
     {
-      digitalWrite(P_WINDOW_DIR_PIN,LOW);
-      ledcWrite(p_window_pwm_channel,120);
+      current_millis = millis();
+      while(millis()-current_millis<1000)
+      {
+        digitalWrite(P_WINDOW_DIR_PIN,HIGH);
+        ledcWrite(p_window_pwm_channel,75);
+        digitalWrite(L_ACTUATOR_DIR_PIN,HIGH);
+        ledcWrite(l_actuator_pwm_channel,75);
+      }
+      current_millis = millis();
+      while(millis()-current_millis<1000)
+      {
+        digitalWrite(P_WINDOW_DIR_PIN,HIGH);
+        ledcWrite(p_window_pwm_channel,40);
+        digitalWrite(L_ACTUATOR_DIR_PIN,HIGH);
+        ledcWrite(l_actuator_pwm_channel,40);
+      }
+      current_millis = millis();
+      while(millis()-current_millis<600)
+      {
+        digitalWrite(P_WINDOW_DIR_PIN,HIGH);
+        ledcWrite(p_window_pwm_channel,75);
+        digitalWrite(L_ACTUATOR_DIR_PIN,HIGH);
+        ledcWrite(l_actuator_pwm_channel,75);
+      }
     }
     else
     {
       ledcWrite(p_window_pwm_channel,0);
+      ledcWrite(l_actuator_pwm_channel,0);
     }
 
     if(ps5.Up())
     {
-      digitalWrite(L_ACTUATOR_DIR_PIN,HIGH);
-      ledcWrite(l_actuator_pwm_channel,80);
+
     }
     else if(ps5.Down())
     {
-      digitalWrite(L_ACTUATOR_DIR_PIN,LOW);
-      ledcWrite(l_actuator_pwm_channel,80);
+      
     }
     else
     {
-      ledcWrite(l_actuator_pwm_channel,0);
+
     }
 
     if (ps5.Left())
@@ -383,7 +428,7 @@ void loop()
           
           calc_robot_dir ( &Magnitude_L , &Angle_L, pulse_M , default_M,Motor_dir,DJI_Increase_Speed);
 
-          ICM20948_GET_READING_QUAT6(&Yaw, &Pitch);
+          ICM20948_GET_READING_QUAT6(&Yaw);
           Yaw_difference = Initial_Yaw - Yaw ;
           if(Yaw_difference>=180)
           {
@@ -419,30 +464,60 @@ void loop()
 
     if(ps5.Right())
     {
-      Target_Pitch = 10;
-      ICM20948_GET_READING_QUAT6(&Yaw, &Pitch);
-      Pitch_difference = Initial_Pitch - Pitch ;
+      Aim_successful = false;
+      DJI_Increase_Speed = -3;
+      Magnitude_L=90;
+      Angle_L = 0;
 
-      while (fabs(Pitch_difference - Target_Pitch) > 1 ) 
+      while(Aim_successful == false)
       {
-        if(ps5.Cross())
+        if (ps5.Cross())
         {
-          ledcWrite(l_actuator_pwm_channel,0);
+          for(i = 0; i<4 ; i++)
+          {
+            pulse_M[i] = default_M[i];
+            ledcWrite(i+3,pulse_M[i]);
+          }
           break;
         }
-        if(Pitch_difference<Target_Pitch)
+        Lidar_Distance = Get_Lidar_data();
+        if(Lidar_Distance > POLE_DISTANCE)
         {
-          digitalWrite(L_ACTUATOR_DIR_PIN,HIGH);
+          
+          calc_robot_dir ( &Magnitude_L , &Angle_L, pulse_M , default_M,Motor_dir,DJI_Increase_Speed);
+
+          ICM20948_GET_READING_QUAT6(&Yaw);
+          Yaw_difference = Initial_Yaw - Yaw ;
+          if(Yaw_difference>=180)
+          {
+            Yaw_difference = Yaw_difference- 360;    // if positive then is towards clockwise, if negative then is towards anticlockwise
+          }
+          else if (Yaw_difference<-180)
+          {
+            Yaw_difference = Yaw_difference + 360;
+          }
+
+          for(i=0;i<4;i++)
+          {
+          Setpoint_Adjust_Yaw (Yaw_difference, i,Motor_dir[i], pulse_M , SPEED_CHG_PER_YAW );
+          }
+
+          for(i = 0; i < 4; i++)
+          {
+            ledcWrite(i+3,pulse_M[i]);
+          }
+      
         }
         else
         {
-          digitalWrite(L_ACTUATOR_DIR_PIN,LOW);
+          for(i = 0; i < 4; i++)
+          {
+            ledcWrite(i+3,default_M[i]);
+          }
+          Aim_successful=true;
+          break;
         }
-        ledcWrite(l_actuator_pwm_channel, 80);
-        ICM20948_GET_READING_QUAT6(&Yaw, &Pitch);
-        Pitch_difference = Initial_Pitch - Pitch ;
       }
-      ledcWrite(l_actuator_pwm_channel,0);
     }
 
     if (ps5.L2())
@@ -571,7 +646,7 @@ void loop()
         }
         break;
       }
-      ICM20948_GET_READING_QUAT6(&Yaw, &Pitch);
+      ICM20948_GET_READING_QUAT6(&Yaw);
         Yaw_difference = Initial_Yaw - Yaw ;
         if(Yaw_difference>=180)
         {
@@ -608,7 +683,7 @@ void loop()
         ledcWrite(i+3,pulse_M[i]);
         }
         Rotate_angle = 0;
-        ICM20948_GET_READING_QUAT6(&Yaw, &Pitch);
+        ICM20948_GET_READING_QUAT6(&Yaw);
         Initial_Yaw = Yaw;
       }
 
@@ -627,9 +702,9 @@ void loop()
       //Serial.println (pulse_M[i]);
       }
       for(i = 0; i < 4; i++)
-    {
+      {
         ledcWrite(i+3,pulse_M[i]);
-    }
+      }
     }
       
     if( Magnitude_L < 30 && Magnitude_R <30) 
@@ -643,4 +718,3 @@ void loop()
     
   }
 }
-
